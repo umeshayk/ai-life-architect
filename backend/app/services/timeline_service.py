@@ -190,15 +190,18 @@ def _detect_emerging_topics(
     if range_key == "all":
         return []
 
-    emerging = []
-    for topic in top_topics:
-        historical_count = all_topic_counts[topic.name]
-        prior_count = max(historical_count - topic.count, 0)
-        if topic.count >= 1 and prior_count <= max(1, topic.count - 1) and historical_count <= max(4, topic.count * 2):
-            emerging.append(topic.name)
-        if len(emerging) >= 3:
-            break
-    return emerging
+    ranked_topics = sorted(
+        top_topics,
+        key=lambda topic: (topic.count, all_topic_counts[topic.name], topic.name),
+        reverse=True,
+    )
+
+    emerging = [
+        topic.name
+        for topic in ranked_topics[2:]
+        if topic.count > 0
+    ]
+    return emerging[:2]
 
 
 def _build_insight_summary(
