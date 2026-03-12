@@ -20,6 +20,7 @@ class GraphEdge(BaseModel):
     source: str
     target: str
     type: str
+    weight: float = 1.0
 
 
 class GraphResponse(BaseModel):
