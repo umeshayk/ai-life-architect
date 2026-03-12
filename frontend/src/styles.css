@@ -453,6 +453,55 @@ select {
   margin: 0 0 0.4rem;
 }
 
+.timeline-strategy-card {
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  padding: 1rem;
+  background: #f8fbff;
+}
+
+.timeline-strategy-card h5 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.timeline-strategy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.timeline-strategy-step {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #334155;
+}
+
+.timeline-strategy-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.timeline-strategy-marker.completed {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.timeline-strategy-complete {
+  color: #15803d;
+  font-weight: 600;
+}
+
 .timeline-chart-shell {
   display: flex;
   flex-direction: column;

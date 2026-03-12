@@ -222,6 +222,30 @@ export default function Timeline() {
             <p className="muted">No obvious knowledge gaps detected yet.</p>
           )}
         </div>
+        <div>
+          <h4>Knowledge Strategy</h4>
+          {insights?.strategies?.length ? (
+            <div className="stack compact">
+              {insights.strategies.map((strategy) => (
+                <div key={strategy.domain} className="timeline-strategy-card">
+                  <h5>{strategy.domain} Learning Path</h5>
+                  <div className="timeline-strategy-list">
+                    {strategy.path.map((step) => (
+                      <div key={`${strategy.domain}-${step.topic}`} className="timeline-strategy-step">
+                        <span className={`timeline-strategy-marker ${step.completed ? "completed" : ""}`}>
+                          {step.completed ? "✓" : "→"}
+                        </span>
+                        <span className={step.completed ? "timeline-strategy-complete" : ""}>{step.topic}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No strategy path available yet.</p>
+          )}
+        </div>
         {!!insights?.suggestions?.length && (
           <>
             <h4>Suggestions</h4>

@@ -10,6 +10,8 @@ from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.schemas.evolution import EvolutionResponse, EvolutionSeries
 from app.schemas.timeline import (
+    KnowledgeStrategy,
+    StrategyStep,
     TimelineGroup,
     TimelineInsights,
     TimelineItem,
@@ -44,6 +46,23 @@ KNOWLEDGE_GAP_MAP = {
     "Hydroponic Farming": ["Climate Control", "Controlled Environment Agriculture", "Nutrient Scheduling"],
     "Vedic Mathematics": ["Vedic Multiplication", "Mental Math Speed Techniques", "Sutra Practice Systems"],
 }
+STRATEGY_MAPS = [
+    {
+        "domain": "AI Systems",
+        "seeds": {"Embeddings", "Semantic Search", "Retrieval Augmented Generation", "LLM Systems", "Vector Databases"},
+        "path": ["Embeddings", "Vector Databases", "Hybrid Search", "Retrieval Optimization", "Evaluation Metrics"],
+    },
+    {
+        "domain": "Agriculture",
+        "seeds": {"Mushroom Farming", "Hydroponic Farming", "Farm Business"},
+        "path": ["Mushroom Farming", "Spawn Quality", "Substrate Sterilization", "Yield Optimization", "Mushroom Business Models"],
+    },
+    {
+        "domain": "Mathematics",
+        "seeds": {"Vedic Mathematics", "Mathematics"},
+        "path": ["Vedic Mathematics", "Nikhilam Sutra", "Urdhva Tiryagbhyam", "Speed Multiplication", "Mental Math"],
+    },
+]
 
 
 def get_timeline(db: Session, user_id: int, range_key: str = "30d", group_by: str = "week") -> TimelineResponse:
@@ -312,6 +331,7 @@ def _build_insights(
             stable_topic=None,
             suggested_topics=[],
             knowledge_gaps=[],
+            strategies=[],
             suggestions=[],
         )
 
@@ -327,6 +347,7 @@ def _build_insights(
     emerging_topic = _select_curated_emerging_topic(evolution, emerging_topics, fastest_topic, emerging_topic)
     suggested_topics = _build_suggested_topics(top_topics, emerging_topics)
     knowledge_gaps = _build_knowledge_gaps(top_topics, emerging_topics, all_topic_counts)
+    strategies = _build_knowledge_strategies(top_topics, emerging_topics, all_topic_counts)
     summary = _build_insight_summary(top_topics, dominant_topic, emerging_topics, range_key)
     suggestions = _build_suggestions(top_topics, emerging_topics)
 
@@ -339,6 +360,7 @@ def _build_insights(
         stable_topic=stable_topic,
         suggested_topics=suggested_topics,
         knowledge_gaps=knowledge_gaps,
+        strategies=strategies,
         suggestions=suggestions[:3],
     )
 
@@ -383,6 +405,40 @@ def _build_knowledge_gaps(
                 return gaps
 
     return gaps
+
+
+def _build_knowledge_strategies(
+    top_topics: list[TimelineTopicCount],
+    emerging_topics: list[str],
+    all_topic_counts: Counter[str],
+) -> list[KnowledgeStrategy]:
+    seeds = {topic.name for topic in top_topics[:4]} | set(emerging_topics[:2])
+    existing_topics = set(all_topic_counts.keys())
+    strategies: list[KnowledgeStrategy] = []
+    seen_domains = set()
+
+    for config in STRATEGY_MAPS:
+        if config["domain"] in seen_domains:
+            continue
+        if not seeds.intersection(config["seeds"]):
+            continue
+
+        steps = []
+        seen_topics = set()
+        for topic_name in config["path"]:
+            if topic_name in seen_topics:
+                continue
+            seen_topics.add(topic_name)
+            steps.append(
+                StrategyStep(
+                    topic=topic_name,
+                    completed=topic_name in existing_topics,
+                )
+            )
+        strategies.append(KnowledgeStrategy(domain=config["domain"], path=steps))
+        seen_domains.add(config["domain"])
+
+    return strategies[:2]
 
 
 def _select_curated_emerging_topic(

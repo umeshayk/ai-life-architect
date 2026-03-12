@@ -32,6 +32,16 @@ class TimelineSummary(BaseModel):
     latest_item_title: str | None
 
 
+class StrategyStep(BaseModel):
+    topic: str
+    completed: bool
+
+
+class KnowledgeStrategy(BaseModel):
+    domain: str
+    path: list[StrategyStep]
+
+
 class TimelineInsights(BaseModel):
     summary: str
     emerging_topics: list[str]
@@ -41,6 +51,7 @@ class TimelineInsights(BaseModel):
     stable_topic: str | None
     suggested_topics: list[str]
     knowledge_gaps: list[str]
+    strategies: list[KnowledgeStrategy]
     suggestions: list[str]
 
 
