@@ -36,6 +36,14 @@ CURIOUS_TOPIC_MAP = {
     "AI Life Architect": ["Personal Knowledge Architecture", "Agent Workflows", "Memory System Design"],
     "Travel / Spiritual": ["Pilgrimage Planning", "Temple Research", "Travel Journaling"],
 }
+KNOWLEDGE_GAP_MAP = {
+    "Embeddings": ["Vector Databases", "Embedding Evaluation", "Vector Indexing"],
+    "Semantic Search": ["Hybrid Search", "Index Optimization", "Vector Indexing"],
+    "Retrieval Augmented Generation": ["Retrieval Optimization", "Context Compression", "Chunking Strategy"],
+    "Mushroom Farming": ["Spawn Quality", "Substrate Sterilization", "Mushroom Business Models"],
+    "Hydroponic Farming": ["Climate Control", "Controlled Environment Agriculture", "Nutrient Scheduling"],
+    "Vedic Mathematics": ["Vedic Multiplication", "Mental Math Speed Techniques", "Sutra Practice Systems"],
+}
 
 
 def get_timeline(db: Session, user_id: int, range_key: str = "30d", group_by: str = "week") -> TimelineResponse:
@@ -303,6 +311,7 @@ def _build_insights(
             emerging_topic=None,
             stable_topic=None,
             suggested_topics=[],
+            knowledge_gaps=[],
             suggestions=[],
         )
 
@@ -317,6 +326,7 @@ def _build_insights(
     fastest_topic, emerging_topic, stable_topic = _detect_momentum(evolution)
     emerging_topic = _select_curated_emerging_topic(evolution, emerging_topics, fastest_topic, emerging_topic)
     suggested_topics = _build_suggested_topics(top_topics, emerging_topics)
+    knowledge_gaps = _build_knowledge_gaps(top_topics, emerging_topics, all_topic_counts)
     summary = _build_insight_summary(top_topics, dominant_topic, emerging_topics, range_key)
     suggestions = _build_suggestions(top_topics, emerging_topics)
 
@@ -328,6 +338,7 @@ def _build_insights(
         emerging_topic=emerging_topic,
         stable_topic=stable_topic,
         suggested_topics=suggested_topics,
+        knowledge_gaps=knowledge_gaps,
         suggestions=suggestions[:3],
     )
 
@@ -350,6 +361,28 @@ def _build_suggested_topics(
                 return suggestions
 
     return suggestions
+
+
+def _build_knowledge_gaps(
+    top_topics: list[TimelineTopicCount],
+    emerging_topics: list[str],
+    all_topic_counts: Counter[str],
+) -> list[str]:
+    seeds = [topic.name for topic in top_topics[:4]] + emerging_topics[:2]
+    existing_topics = set(all_topic_counts.keys())
+    gaps: list[str] = []
+    seen = set()
+
+    for seed in seeds:
+        for related in KNOWLEDGE_GAP_MAP.get(seed, []):
+            if related in existing_topics or related in seen or related in seeds:
+                continue
+            seen.add(related)
+            gaps.append(related)
+            if len(gaps) >= 5:
+                return gaps
+
+    return gaps
 
 
 def _select_curated_emerging_topic(

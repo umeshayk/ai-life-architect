@@ -40,6 +40,7 @@ class TimelineInsights(BaseModel):
     emerging_topic: str | None
     stable_topic: str | None
     suggested_topics: list[str]
+    knowledge_gaps: list[str]
     suggestions: list[str]
 
 

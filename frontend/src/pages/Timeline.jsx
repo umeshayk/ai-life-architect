@@ -210,6 +210,18 @@ export default function Timeline() {
             <p className="muted">No exploration suggestions yet.</p>
           )}
         </div>
+        <div>
+          <h4>Knowledge Gaps</h4>
+          {insights?.knowledge_gaps?.length ? (
+            <div className="tag-list">
+              {insights.knowledge_gaps.map((topic) => (
+                <span key={topic} className="tag">{topic}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No obvious knowledge gaps detected yet.</p>
+          )}
+        </div>
         {!!insights?.suggestions?.length && (
           <>
             <h4>Suggestions</h4>
