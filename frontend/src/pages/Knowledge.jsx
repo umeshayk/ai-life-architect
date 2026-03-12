@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import api from "../api/client";
 
 const initialForm = { type: "note", title: "", content: "", source_url: "" };
 const formatTypeLabel = (type) => type.charAt(0).toUpperCase() + type.slice(1);
 
 export default function Knowledge() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [relatedItems, setRelatedItems] = useState({});
@@ -15,6 +17,7 @@ export default function Knowledge() {
   const [error, setError] = useState("");
   const [searchError, setSearchError] = useState("");
   const [searching, setSearching] = useState(false);
+  const topicFilter = searchParams.get("topic")?.trim() || "";
 
   const loadItems = async () => {
     const response = await api.get("/knowledge");
@@ -85,9 +88,25 @@ export default function Knowledge() {
     setQuery("");
     setSearchResults([]);
     setSearchError("");
+    if (topicFilter) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("topic");
+      setSearchParams(nextParams, { replace: true });
+    }
   };
 
-  const displayedItems = query.trim() ? searchResults : items;
+  const displayedItems = useMemo(() => {
+    if (query.trim()) {
+      return searchResults;
+    }
+    if (topicFilter) {
+      return items.filter((item) =>
+        Array.isArray(item.topics) &&
+        item.topics.some((topic) => topic.name.toLowerCase() === topicFilter.toLowerCase())
+      );
+    }
+    return items;
+  }, [items, query, searchResults, topicFilter]);
 
   return (
     <div className="page-grid">
@@ -140,8 +159,18 @@ export default function Knowledge() {
         </div>
 
         <div className="card">
-          <h2>{query.trim() ? "Semantic Results" : "Saved Items"}</h2>
+          <div className="row-between">
+            <h2>{query.trim() ? "Semantic Results" : topicFilter ? `Saved Items for ${topicFilter}` : "Saved Items"}</h2>
+            {topicFilter && !query.trim() && (
+              <button type="button" className="secondary-button" onClick={clearSearch}>
+                Clear Topic Filter
+              </button>
+            )}
+          </div>
           <div className="stack compact">
+            {!displayedItems.length && topicFilter && !query.trim() && (
+              <p className="muted">No saved items found for this topic yet.</p>
+            )}
             {displayedItems.map((item) => (
               <article key={item.id} className="result-item">
                 <div className="row-between">

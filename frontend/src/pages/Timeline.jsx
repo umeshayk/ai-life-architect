@@ -316,12 +316,15 @@ export default function Timeline() {
           <div className="stack compact">
             {actionPlan.map((item) => (
               <div key={`${item.domain}-${item.action}`} className="timeline-action-plan-card">
-                <div className="row-between">
-                  <h4>{item.domain}</h4>
-                  <span className="tag">{item.action}</span>
-                </div>
+                <h4>{item.domain}</h4>
                 <p className="timeline-summary-value">{item.action}</p>
                 <p className="source-meta">{item.reason}</p>
+                <Link
+                  to={`/knowledge?topic=${encodeURIComponent(item.action.replace(/^(Study|Start)\s+/i, "").trim())}`}
+                  className="action-btn"
+                >
+                  {item.action}
+                </Link>
               </div>
             ))}
           </div>
