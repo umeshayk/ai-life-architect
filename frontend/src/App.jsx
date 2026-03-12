@@ -9,10 +9,12 @@ import Upload from "./pages/Upload";
 import AskAI from "./pages/AskAI";
 import Profile from "./pages/Profile";
 import BrainMap from "./pages/BrainMap";
+import Timeline from "./pages/Timeline";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", shortLabel: "DB" },
   { to: "/knowledge", label: "Knowledge", shortLabel: "KN" },
+  { to: "/timeline", label: "Timeline", shortLabel: "TL" },
   { to: "/brain-map", label: "Brain Map", shortLabel: "BM" },
   { to: "/upload", label: "Upload", shortLabel: "UP" },
   { to: "/ask-ai", label: "Ask AI", shortLabel: "AI" },
@@ -131,6 +133,14 @@ export default function App() {
               element={
                 <ProtectedRoute isAuthenticated={isAuthenticated}>
                   <Knowledge />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/timeline"
+              element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <Timeline />
                 </ProtectedRoute>
               }
             />
