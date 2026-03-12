@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.schemas.evolution import EvolutionResponse, EvolutionSeries
+from app.services.forecast_service import build_knowledge_forecast
 from app.schemas.timeline import (
+    KnowledgeForecast,
     KnowledgeProject,
     KnowledgeStrategy,
     StrategyStep,
@@ -367,6 +369,7 @@ def _build_insights(
             knowledge_gaps=[],
             strategies=[],
             projects=[],
+            forecast=[],
             suggestions=[],
         )
 
@@ -384,6 +387,7 @@ def _build_insights(
     knowledge_gaps = _build_knowledge_gaps(top_topics, emerging_topics, all_topic_counts)
     strategies = _build_knowledge_strategies(top_topics, emerging_topics, all_topic_counts)
     projects = _build_knowledge_projects(top_topics, emerging_topics, all_topic_counts)
+    forecast = build_knowledge_forecast(top_topics, projects, evolution)
     summary = _build_insight_summary(top_topics, dominant_topic, emerging_topics, range_key)
     suggestions = _build_suggestions(top_topics, emerging_topics)
 
@@ -398,6 +402,7 @@ def _build_insights(
         knowledge_gaps=knowledge_gaps,
         strategies=strategies,
         projects=projects,
+        forecast=forecast,
         suggestions=suggestions[:3],
     )
 

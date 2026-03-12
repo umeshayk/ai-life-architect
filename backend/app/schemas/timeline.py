@@ -49,6 +49,12 @@ class KnowledgeProject(BaseModel):
     next_step: str | None
 
 
+class KnowledgeForecast(BaseModel):
+    domain: str
+    confidence: float
+    estimated_mastery_months: int
+
+
 class TimelineInsights(BaseModel):
     summary: str
     emerging_topics: list[str]
@@ -60,6 +66,7 @@ class TimelineInsights(BaseModel):
     knowledge_gaps: list[str]
     strategies: list[KnowledgeStrategy]
     projects: list[KnowledgeProject]
+    forecast: list[KnowledgeForecast]
     suggestions: list[str]
 
 

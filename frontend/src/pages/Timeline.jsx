@@ -288,6 +288,23 @@ export default function Timeline() {
       </section>
 
       <section className="card">
+        <h3>Knowledge Forecast</h3>
+        {insights?.forecast?.length ? (
+          <div className="stack compact">
+            {insights.forecast.map((entry) => (
+              <div key={entry.domain} className="timeline-forecast-card">
+                <h4>{entry.domain} Expertise</h4>
+                <p className="timeline-summary-value">Confidence: {Math.round(entry.confidence * 100)}%</p>
+                <p className="source-meta">Estimated mastery: {entry.estimated_mastery_months} months</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">No forecast available yet.</p>
+        )}
+      </section>
+
+      <section className="card">
         <h3>Knowledge Evolution Graph</h3>
         <p className="muted">See how your interests and knowledge topics changed over time.</p>
         {!evolution?.labels?.length || !chartSeries.length ? (

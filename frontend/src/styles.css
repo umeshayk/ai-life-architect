@@ -530,6 +530,18 @@ select {
   background: linear-gradient(90deg, #2563eb 0%, #0f766e 100%);
 }
 
+.timeline-forecast-card {
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  padding: 1rem;
+  background: #f8fbff;
+}
+
+.timeline-forecast-card h4 {
+  margin: 0 0 0.4rem;
+  color: #0f172a;
+}
+
 .timeline-chart-shell {
   display: flex;
   flex-direction: column;
