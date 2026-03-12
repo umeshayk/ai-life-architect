@@ -9,6 +9,7 @@ class TopicSummary(BaseModel):
     id: int
     name: str
     count: int
+    discovery_method: str = "discovered"
 
 
 class TopicItem(BaseModel):
@@ -22,6 +23,7 @@ class TopicRebuildResponse(BaseModel):
     processed_items: int
     topics_created: int
     links_created: int
+    discovery_method: str = "discovered"
 
 
 class TopicItemsResponse(BaseModel):

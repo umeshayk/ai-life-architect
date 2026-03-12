@@ -3,13 +3,27 @@ import api from "../api/client";
 
 export default function Dashboard({ user }) {
   const [insights, setInsights] = useState(null);
+  const [discovering, setDiscovering] = useState(false);
 
-  useEffect(() => {
+  const loadInsights = () =>
     api
       .get("/api/insights/weekly")
       .then((response) => setInsights(response.data))
       .catch(() => setInsights(null));
+
+  useEffect(() => {
+    loadInsights();
   }, []);
+
+  const handleRediscoverTopics = async () => {
+    setDiscovering(true);
+    try {
+      await api.post("/api/topics/discover");
+      await loadInsights();
+    } finally {
+      setDiscovering(false);
+    }
+  };
 
   return (
     <div className="stack">
@@ -28,7 +42,12 @@ export default function Dashboard({ user }) {
         </div>
       </section>
       <section className="card">
-        <h3>Top Topics</h3>
+        <div className="row-between">
+          <h3>Top Topics</h3>
+          <button type="button" className="secondary-button" onClick={handleRediscoverTopics}>
+            {discovering ? "Discovering..." : "Rediscover Topics"}
+          </button>
+        </div>
         <div className="tag-list">
           {(insights?.top_topics || []).map((topic) => (
             <span key={topic.id || topic.name} className="tag">

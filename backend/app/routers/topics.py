@@ -10,7 +10,7 @@ from app.models.user import User
 from app.routers.auth import get_current_user
 from app.routers.knowledge import serialize_knowledge
 from app.schemas.topic import TopicItemsResponse, TopicRebuildResponse, TopicSummary
-from app.services.topic_service import get_topics_with_counts, rebuild_topics_for_user
+from app.services.topic_service import discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
 
 
 router = APIRouter(tags=["topics"])
@@ -19,7 +19,11 @@ router = APIRouter(tags=["topics"])
 @router.get("/api/topics", response_model=list[TopicSummary])
 def list_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     rows = get_topics_with_counts(db, current_user.id)
-    return [TopicSummary(id=topic.id, name=topic.name, count=count) for topic, count in rows]
+    return [
+        TopicSummary(id=topic.id, name=topic.name, count=count, discovery_method="discovered")
+        for topic, count in rows
+        if count > 0
+    ]
 
 
 @router.get("/api/topics/{topic_id}/items", response_model=TopicItemsResponse)
@@ -33,7 +37,7 @@ def get_topic_items(topic_id: int, db: Session = Depends(get_db), current_user: 
         .where(ContentTopic.topic_id == topic.id, KnowledgeItem.user_id == current_user.id)
     ).all()
     return TopicItemsResponse(
-        topic=TopicSummary(id=topic.id, name=topic.name, count=len(items)),
+        topic=TopicSummary(id=topic.id, name=topic.name, count=len(items), discovery_method="discovered"),
         items=[serialize_knowledge(item) for item in items],
     )
 
@@ -45,4 +49,27 @@ def rebuild_topics(db: Session = Depends(get_db), current_user: User = Depends(g
         processed_items=processed_items,
         topics_created=topics_created,
         links_created=links_created,
+        discovery_method="discovered",
+    )
+
+
+@router.post("/api/topics/discover", response_model=TopicRebuildResponse)
+def discover_user_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    processed_items, topics_created, links_created = discover_topics(db, current_user.id)
+    return TopicRebuildResponse(
+        processed_items=processed_items,
+        topics_created=topics_created,
+        links_created=links_created,
+        discovery_method="discovered",
+    )
+
+
+@router.post("/api/topics/reassign", response_model=TopicRebuildResponse)
+def reassign_user_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    processed_items, topics_created, links_created = reassign_topics(db, current_user.id)
+    return TopicRebuildResponse(
+        processed_items=processed_items,
+        topics_created=topics_created,
+        links_created=links_created,
+        discovery_method="discovered",
     )
