@@ -52,13 +52,55 @@ select {
   color: #e2e8f0;
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
+  gap: 1.5rem;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  min-height: 100vh;
+  transition: width 0.2s ease, padding 0.2s ease;
+}
+
+.sidebar.collapsed {
+  width: 96px;
+  padding: 1.5rem 0.75rem;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 2rem;
+  gap: 0.75rem;
 }
 
 .sidebar h1 {
   margin: 0 0 0.5rem;
   font-size: 1.5rem;
+}
+
+.sidebar-toggle {
+  min-width: 40px;
+  padding: 0.6rem 0.8rem;
+  background: #1e293b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-toggle-icon {
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid #e2e8f0;
+  border-right: 2px solid #e2e8f0;
+  display: inline-block;
+}
+
+.sidebar-toggle-icon.left {
+  transform: rotate(-135deg);
+}
+
+.sidebar-toggle-icon.right {
+  transform: rotate(45deg);
 }
 
 .nav-link {
@@ -68,11 +110,35 @@ select {
   padding: 0.8rem 1rem;
   border-radius: 10px;
   margin-bottom: 0.5rem;
+  text-align: left;
 }
 
 .nav-link.active {
   background: #1d4ed8;
   color: #fff;
+}
+
+.sidebar.collapsed .nav-link {
+  text-align: center;
+  padding: 0.8rem 0.5rem;
+}
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.sidebar.collapsed .nav-link.active .nav-badge {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .content-layout,
@@ -201,6 +267,11 @@ select {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  margin-top: auto;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  align-items: stretch;
 }
 
 .secondary-button {
@@ -238,6 +309,13 @@ select {
 
   .sidebar {
     width: 100%;
+    min-height: auto;
+    position: static;
+  }
+
+  .sidebar.collapsed {
+    width: 100%;
+    padding: 1.5rem 1.25rem;
   }
 
   .page-grid,

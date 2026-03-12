@@ -10,11 +10,11 @@ import AskAI from "./pages/AskAI";
 import Profile from "./pages/Profile";
 
 const navItems = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/knowledge", label: "Knowledge" },
-  { to: "/upload", label: "Upload" },
-  { to: "/ask-ai", label: "Ask AI" },
-  { to: "/profile", label: "Profile" }
+  { to: "/dashboard", label: "Dashboard", shortLabel: "DB" },
+  { to: "/knowledge", label: "Knowledge", shortLabel: "KN" },
+  { to: "/upload", label: "Upload", shortLabel: "UP" },
+  { to: "/ask-ai", label: "Ask AI", shortLabel: "AI" },
+  { to: "/profile", label: "Profile", shortLabel: "PR" }
 ];
 
 function ProtectedRoute({ isAuthenticated, children }) {
@@ -29,6 +29,7 @@ export default function App() {
   const location = useLocation();
   const [user, setUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const loadCurrentUser = async () => {
     const token = localStorage.getItem("token");
@@ -71,22 +72,38 @@ export default function App() {
   return (
     <div className="app-shell">
       {!isAuthPage && (
-        <aside className="sidebar">
-          <div>
-            <h1>AI Life Architect</h1>
-            <p className="muted">Personal knowledge workspace</p>
+        <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
+          <div className="sidebar-header">
+            <div>
+              <h1>{sidebarCollapsed ? "AI" : "AI Life Architect"}</h1>
+              {!sidebarCollapsed && <p className="muted">Personal knowledge workspace</p>}
+            </div>
+            <button
+              type="button"
+              className="sidebar-toggle"
+              onClick={() => setSidebarCollapsed((current) => !current)}
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <span className={`sidebar-toggle-icon ${sidebarCollapsed ? "right" : "left"}`} />
+            </button>
           </div>
           <nav>
             {navItems.map((item) => (
-              <NavLink key={item.to} to={item.to} className="nav-link">
-                {item.label}
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className="nav-link"
+                title={sidebarCollapsed ? item.label : undefined}
+              >
+                {sidebarCollapsed ? <span className="nav-badge">{item.shortLabel}</span> : item.label}
               </NavLink>
             ))}
           </nav>
           <div className="sidebar-footer">
-            <p>{user?.full_name || "Guest"}</p>
+            {!sidebarCollapsed && <p>{user?.full_name || "Guest"}</p>}
             <button className="secondary-button" onClick={handleLogout} type="button">
-              Log Out
+              {sidebarCollapsed ? "Out" : "Log Out"}
             </button>
           </div>
         </aside>
