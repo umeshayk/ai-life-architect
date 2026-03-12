@@ -198,6 +198,18 @@ export default function Timeline() {
             <p className="timeline-summary-value">{insights?.stable_topic || "-"}</p>
           </div>
         </div>
+        <div>
+          <h4>Suggested Exploration</h4>
+          {insights?.suggested_topics?.length ? (
+            <div className="tag-list">
+              {insights.suggested_topics.map((topic) => (
+                <button key={topic} type="button" className="pill-button">{topic}</button>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No exploration suggestions yet.</p>
+          )}
+        </div>
         {!!insights?.suggestions?.length && (
           <>
             <h4>Suggestions</h4>

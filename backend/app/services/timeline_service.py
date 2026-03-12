@@ -21,6 +21,21 @@ from app.schemas.timeline import (
 
 VALID_RANGES = {"7d", "30d", "all"}
 VALID_GROUPS = {"day", "week", "month"}
+CURIOUS_TOPIC_MAP = {
+    "Embeddings": ["Vector Databases", "Index Optimization", "Embedding Evaluation"],
+    "Semantic Search": ["Hybrid Search", "Query Expansion", "Search Ranking"],
+    "Retrieval Augmented Generation": ["Retrieval Optimization", "Context Compression", "Chunking Strategy"],
+    "LLM Systems": ["Prompt Engineering", "Model Evaluation", "Inference Optimization"],
+    "Vector Databases": ["ANN Indexes", "Hybrid Search", "Metadata Filtering"],
+    "Mushroom Farming": ["Mushroom Business Models", "Spawn Quality", "Yield Optimization"],
+    "Hydroponic Farming": ["Controlled Environment Agriculture", "Nutrient Scheduling", "Greenhouse Automation"],
+    "Farm Business": ["Unit Economics", "Go To Market", "Local Distribution"],
+    "Vedic Mathematics": ["Vedic Multiplication Techniques", "Mental Math Speed Techniques", "Sutra Practice Systems"],
+    "Mathematics": ["Mental Math Speed Techniques", "Pattern Recognition", "Worked Example Sets"],
+    "Knowledge Management": ["Note Linking Systems", "Knowledge Review Rituals", "Second Brain Workflows"],
+    "AI Life Architect": ["Personal Knowledge Architecture", "Agent Workflows", "Memory System Design"],
+    "Travel / Spiritual": ["Pilgrimage Planning", "Temple Research", "Travel Journaling"],
+}
 
 
 def get_timeline(db: Session, user_id: int, range_key: str = "30d", group_by: str = "week") -> TimelineResponse:
@@ -287,6 +302,7 @@ def _build_insights(
             fastest_topic=None,
             emerging_topic=None,
             stable_topic=None,
+            suggested_topics=[],
             suggestions=[],
         )
 
@@ -300,6 +316,7 @@ def _build_insights(
     emerging_topics = _detect_emerging_topics(top_topics, all_topic_counts, range_key)
     fastest_topic, emerging_topic, stable_topic = _detect_momentum(evolution)
     emerging_topic = _select_curated_emerging_topic(evolution, emerging_topics, fastest_topic, emerging_topic)
+    suggested_topics = _build_suggested_topics(top_topics, emerging_topics)
     summary = _build_insight_summary(top_topics, dominant_topic, emerging_topics, range_key)
     suggestions = _build_suggestions(top_topics, emerging_topics)
 
@@ -310,8 +327,29 @@ def _build_insights(
         fastest_topic=fastest_topic,
         emerging_topic=emerging_topic,
         stable_topic=stable_topic,
+        suggested_topics=suggested_topics,
         suggestions=suggestions[:3],
     )
+
+
+def _build_suggested_topics(
+    top_topics: list[TimelineTopicCount],
+    emerging_topics: list[str],
+) -> list[str]:
+    seeds = [topic.name for topic in top_topics[:4]] + emerging_topics[:2]
+    suggestions: list[str] = []
+    seen = set()
+
+    for seed in seeds:
+        for related in CURIOUS_TOPIC_MAP.get(seed, []):
+            if related in seen or related in seeds:
+                continue
+            seen.add(related)
+            suggestions.append(related)
+            if len(suggestions) >= 5:
+                return suggestions
+
+    return suggestions
 
 
 def _select_curated_emerging_topic(
