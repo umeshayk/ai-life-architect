@@ -10,6 +10,7 @@ from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.schemas.evolution import EvolutionResponse, EvolutionSeries
 from app.schemas.timeline import (
+    KnowledgeProject,
     KnowledgeStrategy,
     StrategyStep,
     TimelineGroup,
@@ -61,6 +62,39 @@ STRATEGY_MAPS = [
         "domain": "Mathematics",
         "seeds": {"Vedic Mathematics", "Mathematics"},
         "path": ["Vedic Mathematics", "Nikhilam Sutra", "Urdhva Tiryagbhyam", "Speed Multiplication", "Mental Math"],
+    },
+]
+PROJECT_MAPS = [
+    {
+        "name": "AI Systems",
+        "seeds": {"Embeddings", "Semantic Search", "Vector Databases", "Retrieval Augmented Generation", "LLM Systems"},
+        "topics": ["Embeddings", "Semantic Search", "Vector Databases", "Hybrid Search", "Retrieval Optimization"],
+    },
+    {
+        "name": "Agriculture",
+        "seeds": {
+            "Mushroom Farming",
+            "Hydroponic Farming",
+            "Spawn Quality",
+            "Substrate Sterilization",
+            "Yield Optimization",
+            "Climate Control",
+            "Controlled Environment Agriculture",
+            "Farm Business",
+        },
+        "topics": [
+            "Mushroom Farming",
+            "Hydroponic Farming",
+            "Spawn Quality",
+            "Substrate Sterilization",
+            "Yield Optimization",
+            "Climate Control",
+        ],
+    },
+    {
+        "name": "Vedic Mathematics",
+        "seeds": {"Vedic Mathematics", "Nikhilam Sutra", "Urdhva Tiryagbhyam", "Speed Multiplication", "Mental Math"},
+        "topics": ["Vedic Mathematics", "Nikhilam Sutra", "Urdhva Tiryagbhyam", "Speed Multiplication", "Mental Math"],
     },
 ]
 
@@ -332,6 +366,7 @@ def _build_insights(
             suggested_topics=[],
             knowledge_gaps=[],
             strategies=[],
+            projects=[],
             suggestions=[],
         )
 
@@ -348,6 +383,7 @@ def _build_insights(
     suggested_topics = _build_suggested_topics(top_topics, emerging_topics)
     knowledge_gaps = _build_knowledge_gaps(top_topics, emerging_topics, all_topic_counts)
     strategies = _build_knowledge_strategies(top_topics, emerging_topics, all_topic_counts)
+    projects = _build_knowledge_projects(top_topics, emerging_topics, all_topic_counts)
     summary = _build_insight_summary(top_topics, dominant_topic, emerging_topics, range_key)
     suggestions = _build_suggestions(top_topics, emerging_topics)
 
@@ -361,6 +397,7 @@ def _build_insights(
         suggested_topics=suggested_topics,
         knowledge_gaps=knowledge_gaps,
         strategies=strategies,
+        projects=projects,
         suggestions=suggestions[:3],
     )
 
@@ -439,6 +476,43 @@ def _build_knowledge_strategies(
         seen_domains.add(config["domain"])
 
     return strategies[:2]
+
+
+def _build_knowledge_projects(
+    top_topics: list[TimelineTopicCount],
+    emerging_topics: list[str],
+    all_topic_counts: Counter[str],
+) -> list[KnowledgeProject]:
+    seeds = {topic.name for topic in top_topics[:5]} | set(emerging_topics[:2])
+    existing_topics = set(all_topic_counts.keys())
+    projects: list[KnowledgeProject] = []
+    seen_names = set()
+
+    for config in PROJECT_MAPS:
+        if config["name"] in seen_names:
+            continue
+        matched_topics = [topic for topic in config["topics"] if topic in existing_topics]
+        if len(set(config["seeds"]).intersection(seeds)) == 0 and not matched_topics:
+            continue
+
+        total_topics = len(config["topics"])
+        completed_topics = len(matched_topics)
+        progress = round(completed_topics / total_topics, 2) if total_topics else 0.0
+        next_step = next((topic for topic in config["topics"] if topic not in existing_topics), None)
+        visible_topics = matched_topics[:4] if matched_topics else config["topics"][:3]
+
+        projects.append(
+            KnowledgeProject(
+                name=f"{config['name']} Project",
+                topics=visible_topics,
+                progress=progress,
+                next_step=next_step,
+            )
+        )
+        seen_names.add(config["name"])
+
+    projects.sort(key=lambda project: (-project.progress, project.name))
+    return projects[:3]
 
 
 def _select_curated_emerging_topic(

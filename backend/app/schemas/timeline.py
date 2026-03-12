@@ -42,6 +42,13 @@ class KnowledgeStrategy(BaseModel):
     path: list[StrategyStep]
 
 
+class KnowledgeProject(BaseModel):
+    name: str
+    topics: list[str]
+    progress: float
+    next_step: str | None
+
+
 class TimelineInsights(BaseModel):
     summary: str
     emerging_topics: list[str]
@@ -52,6 +59,7 @@ class TimelineInsights(BaseModel):
     suggested_topics: list[str]
     knowledge_gaps: list[str]
     strategies: list[KnowledgeStrategy]
+    projects: list[KnowledgeProject]
     suggestions: list[str]
 
 

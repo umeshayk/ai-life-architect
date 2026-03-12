@@ -246,6 +246,35 @@ export default function Timeline() {
             <p className="muted">No strategy path available yet.</p>
           )}
         </div>
+        <div>
+          <h4>Active Knowledge Projects</h4>
+          {insights?.projects?.length ? (
+            <div className="stack compact">
+              {insights.projects.map((project) => (
+                <div key={project.name} className="timeline-project-card">
+                  <div className="row-between">
+                    <h5>{project.name}</h5>
+                    <span className="tag">{Math.round(project.progress * 100)}%</span>
+                  </div>
+                  <div className="timeline-project-progress">
+                    <div
+                      className="timeline-project-progress-bar"
+                      style={{ width: `${Math.max(8, Math.round(project.progress * 100))}%` }}
+                    />
+                  </div>
+                  <div className="tag-list">
+                    {project.topics.map((topic) => (
+                      <span key={`${project.name}-${topic}`} className="tag">{topic}</span>
+                    ))}
+                  </div>
+                  <p className="source-meta">Next suggested step: {project.next_step || "Project is well covered"}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No active knowledge projects detected yet.</p>
+          )}
+        </div>
         {!!insights?.suggestions?.length && (
           <>
             <h4>Suggestions</h4>
