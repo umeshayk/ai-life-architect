@@ -302,6 +302,11 @@ select {
   color: #15803d;
 }
 
+.topic-form-highlight {
+  border-color: #93c5fd;
+  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.16);
+}
+
 .brain-map-toolbar {
   display: flex;
   gap: 0.75rem;

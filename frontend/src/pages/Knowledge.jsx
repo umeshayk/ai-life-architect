@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../api/client";
 
@@ -7,6 +7,7 @@ const formatTypeLabel = (type) => type.charAt(0).toUpperCase() + type.slice(1);
 
 export default function Knowledge() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const formRef = useRef(null);
   const [items, setItems] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [relatedItems, setRelatedItems] = useState({});
@@ -27,6 +28,19 @@ export default function Knowledge() {
   useEffect(() => {
     loadItems();
   }, []);
+
+  useEffect(() => {
+    if (!topicFilter) {
+      return;
+    }
+
+    setForm((current) => {
+      if (current.title.trim()) {
+        return current;
+      }
+      return { ...current, title: topicFilter };
+    });
+  }, [topicFilter]);
 
   const handleCreate = async (event) => {
     event.preventDefault();
@@ -108,10 +122,26 @@ export default function Knowledge() {
     return items;
   }, [items, query, searchResults, topicFilter]);
 
+  const hasEmptyTopicState = Boolean(topicFilter) && !query.trim() && displayedItems.length === 0;
+
+  useEffect(() => {
+    if (!hasEmptyTopicState || !formRef.current) {
+      return;
+    }
+
+    formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [hasEmptyTopicState]);
+
   return (
     <div className="page-grid">
-      <section className="card">
+      <section ref={formRef} className={`card ${hasEmptyTopicState ? "topic-form-highlight" : ""}`}>
         <h2>Save Knowledge</h2>
+        {hasEmptyTopicState && (
+          <p className="success-text">
+            You haven&apos;t saved knowledge about {topicFilter} yet. Add your first note below to start learning this
+            topic.
+          </p>
+        )}
         <form onSubmit={handleCreate} className="stack">
           <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}>
             <option value="note">Note</option>
@@ -169,7 +199,10 @@ export default function Knowledge() {
           </div>
           <div className="stack compact">
             {!displayedItems.length && topicFilter && !query.trim() && (
-              <p className="muted">No saved items found for this topic yet.</p>
+              <p className="muted">
+                You haven&apos;t saved knowledge about {topicFilter} yet. Add your first note below to start learning
+                this topic.
+              </p>
             )}
             {displayedItems.map((item) => (
               <article key={item.id} className="result-item">
