@@ -16,6 +16,7 @@ def build_context_block(matches: list[SearchMatch]) -> str:
             f"Source {index}\n"
             f"Title: {match.item.title}\n"
             f"Type: {match.item.type}\n"
+            f"Topics: {', '.join(content_topic.topic.name for content_topic in match.item.content_topics if content_topic.topic) or 'None'}\n"
             f"Similarity: {match.similarity:.0%}\n"
             f"Summary: {match.item.summary or 'No summary'}\n"
             f"Content: {match.item.content[:1500]}"

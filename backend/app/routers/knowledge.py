@@ -1,15 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import desc, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from app.models.content_topic import ContentTopic
 from app.core.database import get_db
 from app.models.knowledge import KnowledgeItem
 from app.models.user import User
 from app.routers.auth import get_current_user
-from app.schemas.knowledge import KnowledgeCreate, KnowledgeResponse, KnowledgeUpdate, SearchRequest
+from app.schemas.knowledge import KnowledgeCreate, KnowledgeResponse, KnowledgeTopic, KnowledgeUpdate, SearchRequest
+from app.services.connection_service import rebuild_connections_for_user
 from app.services.embeddings import sync_knowledge_embedding
 from app.services.retrieval import semantic_search
 from app.services.summarizer import build_summary_and_tags
+from app.services.topic_service import assign_topics_to_item
 
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -24,6 +27,16 @@ def serialize_knowledge(item: KnowledgeItem) -> KnowledgeResponse:
         content=item.content,
         summary=item.summary,
         tags=[tag.strip() for tag in (item.tags or "").split(",") if tag.strip()],
+        topics=[
+            KnowledgeTopic(
+                id=content_topic.topic.id,
+                name=content_topic.topic.name,
+                confidence_score=content_topic.confidence_score,
+            )
+            for content_topic in item.content_topics
+            if content_topic.topic is not None
+        ],
+        related_count=len(item.outgoing_connections),
         source_url=item.source_url,
         file_name=item.file_name,
         created_at=item.created_at,
@@ -52,7 +65,17 @@ def create_knowledge(
     db.commit()
     db.refresh(item)
     sync_knowledge_embedding(db, item)
+    assign_topics_to_item(db, item)
+    rebuild_connections_for_user(db, current_user.id)
     db.refresh(item)
+    item = db.scalar(
+        select(KnowledgeItem)
+        .options(
+            selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic),
+            selectinload(KnowledgeItem.outgoing_connections),
+        )
+        .where(KnowledgeItem.id == item.id)
+    )
     return serialize_knowledge(item)
 
 
@@ -60,6 +83,10 @@ def create_knowledge(
 def list_knowledge(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     items = db.scalars(
         select(KnowledgeItem)
+        .options(
+            selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic),
+            selectinload(KnowledgeItem.outgoing_connections),
+        )
         .where(KnowledgeItem.user_id == current_user.id)
         .order_by(desc(KnowledgeItem.updated_at))
     ).all()
@@ -94,7 +121,17 @@ def update_knowledge(
     db.commit()
     db.refresh(item)
     sync_knowledge_embedding(db, item)
+    assign_topics_to_item(db, item)
+    rebuild_connections_for_user(db, current_user.id)
     db.refresh(item)
+    item = db.scalar(
+        select(KnowledgeItem)
+        .options(
+            selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic),
+            selectinload(KnowledgeItem.outgoing_connections),
+        )
+        .where(KnowledgeItem.id == item.id)
+    )
     return serialize_knowledge(item)
 
 
@@ -111,6 +148,7 @@ def delete_knowledge(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge item not found")
     db.delete(item)
     db.commit()
+    rebuild_connections_for_user(db, current_user.id)
 
 
 @router.post("/search", response_model=list[KnowledgeResponse])
@@ -120,4 +158,13 @@ def search_knowledge(
     current_user: User = Depends(get_current_user),
 ):
     items = semantic_search(db, current_user.id, payload.query, payload.limit)
-    return [serialize_knowledge(item) for item in items]
+    loaded_items = db.scalars(
+        select(KnowledgeItem)
+        .options(
+            selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic),
+            selectinload(KnowledgeItem.outgoing_connections),
+        )
+        .where(KnowledgeItem.id.in_([match.item.id for match in items]))
+    ).all()
+    item_map = {item.id: item for item in loaded_items}
+    return [serialize_knowledge(item_map[match.item.id]) for match in items if match.item.id in item_map]

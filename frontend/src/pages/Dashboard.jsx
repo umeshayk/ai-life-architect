@@ -6,7 +6,7 @@ export default function Dashboard({ user }) {
 
   useEffect(() => {
     api
-      .get("/api/ai/weekly-insights")
+      .get("/api/insights/weekly")
       .then((response) => setInsights(response.data))
       .catch(() => setInsights(null));
   }, []);
@@ -28,6 +28,16 @@ export default function Dashboard({ user }) {
         </div>
       </section>
       <section className="card">
+        <h3>Top Topics</h3>
+        <div className="tag-list">
+          {(insights?.top_topics || []).map((topic) => (
+            <span key={topic.id || topic.name} className="tag">
+              {topic.name} ({topic.count})
+            </span>
+          ))}
+        </div>
+      </section>
+      <section className="card">
         <h3>Top Tags</h3>
         <div className="tag-list">
           {(insights?.top_tags || []).map((tag) => (
@@ -40,6 +50,14 @@ export default function Dashboard({ user }) {
         <ul className="simple-list">
           {(insights?.recent_titles || []).map((title) => (
             <li key={title}>{title}</li>
+          ))}
+        </ul>
+      </section>
+      <section className="card">
+        <h3>Weekly Suggestions</h3>
+        <ul className="simple-list">
+          {(insights?.suggestions || []).map((suggestion, index) => (
+            <li key={`${index}-${suggestion}`}>{suggestion}</li>
           ))}
         </ul>
       </section>

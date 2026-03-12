@@ -6,8 +6,8 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.database import Base, engine
-from app.models import embedding, knowledge, profile, user  # noqa: F401
-from app.routers import ai, auth, knowledge, profile, upload
+from app.models import content_topic, embedding, knowledge, knowledge_connection, profile, topic, user  # noqa: F401
+from app.routers import ai, auth, connections, insights, knowledge, profile, topics, upload
 
 
 settings = get_settings()
@@ -40,3 +40,6 @@ app.include_router(profile.router)
 app.include_router(knowledge.router)
 app.include_router(upload.router)
 app.include_router(ai.router)
+app.include_router(topics.router)
+app.include_router(connections.router)
+app.include_router(insights.router)

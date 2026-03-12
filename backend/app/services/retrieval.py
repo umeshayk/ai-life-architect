@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from app.models.content_topic import ContentTopic
 from app.models.embedding import KnowledgeEmbedding
 from app.models.knowledge import KnowledgeItem
 from app.services.embeddings import ensure_user_embeddings, generate_embedding
@@ -21,6 +22,7 @@ def semantic_search(db: Session, user_id: int, query: str, limit: int = 5) -> li
     stmt = (
         select(KnowledgeItem, distance)
         .join(KnowledgeEmbedding, KnowledgeEmbedding.knowledge_item_id == KnowledgeItem.id)
+        .options(selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic))
         .where(KnowledgeItem.user_id == user_id)
         .order_by(distance)
         .limit(limit)

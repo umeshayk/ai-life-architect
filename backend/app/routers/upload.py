@@ -9,10 +9,13 @@ from app.core.database import get_db
 from app.models.knowledge import KnowledgeItem
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.routers.knowledge import serialize_knowledge
 from app.schemas.knowledge import KnowledgeResponse
 from app.services.embeddings import sync_knowledge_embedding
 from app.services.file_parser import parse_uploaded_file
 from app.services.summarizer import build_summary_and_tags
+from app.services.connection_service import rebuild_connections_for_user
+from app.services.topic_service import assign_topics_to_item
 
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -51,18 +54,7 @@ async def upload_file(
     db.commit()
     db.refresh(item)
     sync_knowledge_embedding(db, item)
+    assign_topics_to_item(db, item)
+    rebuild_connections_for_user(db, current_user.id)
     db.refresh(item)
-
-    return KnowledgeResponse(
-        id=item.id,
-        user_id=item.user_id,
-        type=item.type,
-        title=item.title,
-        content=item.content,
-        summary=item.summary,
-        tags=tags,
-        source_url=item.source_url,
-        file_name=item.file_name,
-        created_at=item.created_at,
-        updated_at=item.updated_at,
-    )
+    return serialize_knowledge(item)

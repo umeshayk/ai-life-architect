@@ -30,3 +30,18 @@ class KnowledgeItem(Base):
     embedding = relationship(
         "KnowledgeEmbedding", back_populates="knowledge_item", uselist=False, cascade="all, delete-orphan"
     )
+    content_topics = relationship(
+        "ContentTopic", back_populates="knowledge_item", cascade="all, delete-orphan"
+    )
+    outgoing_connections = relationship(
+        "KnowledgeConnection",
+        foreign_keys="KnowledgeConnection.source_knowledge_id",
+        back_populates="source_item",
+        cascade="all, delete-orphan",
+    )
+    incoming_connections = relationship(
+        "KnowledgeConnection",
+        foreign_keys="KnowledgeConnection.target_knowledge_id",
+        back_populates="target_item",
+        cascade="all, delete-orphan",
+    )

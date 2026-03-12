@@ -7,6 +7,9 @@ const formatTypeLabel = (type) => type.charAt(0).toUpperCase() + type.slice(1);
 export default function Knowledge() {
   const [items, setItems] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
+  const [relatedItems, setRelatedItems] = useState({});
+  const [expandedId, setExpandedId] = useState(null);
+  const [loadingRelatedId, setLoadingRelatedId] = useState(null);
   const [query, setQuery] = useState("");
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState("");
@@ -40,6 +43,24 @@ export default function Knowledge() {
   const handleDelete = async (id) => {
     await api.delete(`/knowledge/${id}`);
     await loadItems();
+  };
+
+  const toggleRelated = async (id) => {
+    if (expandedId === id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(id);
+    if (relatedItems[id]) {
+      return;
+    }
+    setLoadingRelatedId(id);
+    try {
+      const response = await api.get(`/api/connections/${id}`);
+      setRelatedItems((current) => ({ ...current, [id]: response.data.related_items }));
+    } finally {
+      setLoadingRelatedId(null);
+    }
   };
 
   const handleSearch = async (event) => {
@@ -128,14 +149,19 @@ export default function Knowledge() {
                     <strong>{item.title}</strong>
                     <p className="muted">
                       {formatTypeLabel(item.type)}
-                      {typeof item.similarity === "number" ? ` · ${Math.round(item.similarity * 100)}% match` : ""}
+                      {typeof item.similarity === "number" ? ` | ${Math.round(item.similarity * 100)}% match` : ""}
                     </p>
                   </div>
-                  {typeof item.similarity !== "number" && (
-                    <button type="button" className="danger-button" onClick={() => handleDelete(item.id)}>
-                      Delete
+                  <div className="action-row">
+                    <button type="button" className="secondary-button" onClick={() => toggleRelated(item.id)}>
+                      {expandedId === item.id ? "Hide Related" : "Show Related"} ({relatedItems[item.id]?.length ?? item.related_count ?? 0})
                     </button>
-                  )}
+                    {typeof item.similarity !== "number" && (
+                      <button type="button" className="danger-button" onClick={() => handleDelete(item.id)}>
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <p>{item.summary || "No summary available."}</p>
                 {Array.isArray(item.tags) && (
@@ -143,6 +169,37 @@ export default function Knowledge() {
                     {item.tags.map((tag) => (
                       <span key={`${item.id}-${tag}`} className="tag">{tag}</span>
                     ))}
+                  </div>
+                )}
+                {Array.isArray(item.topics) && item.topics.length > 0 && (
+                  <div className="tag-list">
+                    {item.topics.map((topic) => (
+                      <span key={`${item.id}-topic-${topic.id}`} className="tag">
+                        {topic.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {expandedId === item.id && (
+                  <div className="related-block">
+                    <h4>Related Knowledge</h4>
+                    {loadingRelatedId === item.id ? (
+                      <p className="muted">Loading related items...</p>
+                    ) : (relatedItems[item.id] || []).length > 0 ? (
+                      <div className="stack compact">
+                        {relatedItems[item.id].map((related) => (
+                          <article key={`${item.id}-${related.id}`} className="related-item">
+                            <strong>{related.title}</strong>
+                            <p className="muted">
+                              {formatTypeLabel(related.type)} | {Math.round(related.similarity_score * 100)}% match
+                            </p>
+                            <p>{related.summary || "No summary available."}</p>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="muted">No related knowledge found yet.</p>
+                    )}
                   </div>
                 )}
               </article>

@@ -83,10 +83,19 @@ export default function AskAI() {
                   <div className="row-between">
                     <strong>{source.title}</strong>
                     <span className="source-meta">
-                      {formatTypeLabel(source.type)} · {Math.round(source.similarity * 100)}%
+                      {formatTypeLabel(source.type)} | {Math.round(source.similarity * 100)}%
                     </span>
                   </div>
                   <p>{source.summary || "No summary available."}</p>
+                  {source.topic_names?.length > 0 && (
+                    <div className="tag-list">
+                      {source.topic_names.map((topicName) => (
+                        <span key={`${source.id}-${topicName}`} className="tag">
+                          {topicName}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </article>
               ))}
             </div>

@@ -3,6 +3,12 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
+class KnowledgeTopic(BaseModel):
+    id: int
+    name: str
+    confidence_score: float
+
+
 class KnowledgeBase(BaseModel):
     type: str = Field(pattern="^(note|link|file)$")
     title: str = Field(min_length=1, max_length=255)
@@ -33,6 +39,8 @@ class KnowledgeResponse(BaseModel):
     content: str
     summary: str | None = None
     tags: list[str] = Field(default_factory=list)
+    topics: list[KnowledgeTopic] = Field(default_factory=list)
+    related_count: int = 0
     source_url: str | None = None
     file_name: str | None = None
     created_at: datetime

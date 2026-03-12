@@ -17,6 +17,7 @@ class SourceItem(BaseModel):
     type: str
     summary: str | None = None
     similarity: float
+    topic_names: list[str] = []
 
 
 class SearchResultItem(SourceItem):
