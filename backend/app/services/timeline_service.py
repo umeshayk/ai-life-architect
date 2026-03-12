@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
+from app.schemas.evolution import EvolutionResponse, EvolutionSeries
 from app.schemas.timeline import (
     TimelineGroup,
     TimelineInsights,
@@ -57,6 +58,117 @@ def get_timeline(db: Session, user_id: int, range_key: str = "30d", group_by: st
     summary = _build_summary(groups, top_topics)
     insights = _build_insights(items, all_items, top_topics, normalized_range)
     return TimelineResponse(groups=groups, top_topics=top_topics, summary=summary, insights=insights)
+
+
+def get_timeline_evolution(
+    db: Session,
+    user_id: int,
+    range_key: str = "30d",
+    group_by: str = "week",
+    limit_topics: int = 5,
+) -> EvolutionResponse:
+    normalized_range = range_key if range_key in VALID_RANGES else "30d"
+    normalized_group = group_by if group_by in VALID_GROUPS else "week"
+    bounded_limit = max(1, min(limit_topics, 8))
+    items = _load_items(db, user_id, normalized_range)
+    if not items:
+        return EvolutionResponse(labels=[], series=[])
+
+    all_items = _load_items(db, user_id, "all")
+    start_date, end_date = _evolution_window(items, all_items, normalized_range)
+    labels = _generate_bucket_labels(start_date, end_date, normalized_group)
+    if not labels:
+        return EvolutionResponse(labels=[], series=[])
+
+    bucket_topic_counts: dict[str, Counter[str]] = defaultdict(Counter)
+    topic_totals: Counter[str] = Counter()
+
+    for item in items:
+        bucket = _bucket_key(item.created_at, normalized_group)
+        topic_names = sorted(
+            {
+                content_topic.topic.name
+                for content_topic in item.content_topics
+                if content_topic.topic is not None
+            }
+        )
+        for topic_name in topic_names:
+            bucket_topic_counts[bucket][topic_name] += 1
+            topic_totals[topic_name] += 1
+
+    top_topic_names = [
+        topic_name
+        for topic_name, _ in topic_totals.most_common(bounded_limit)
+    ]
+    series = [
+        EvolutionSeries(
+            topic=topic_name,
+            values=[bucket_topic_counts[label].get(topic_name, 0) for label in labels],
+        )
+        for topic_name in top_topic_names
+    ]
+    return EvolutionResponse(labels=labels, series=series)
+
+
+def _evolution_window(
+    items: list[KnowledgeItem],
+    all_items: list[KnowledgeItem],
+    range_key: str,
+) -> tuple[datetime, datetime]:
+    end_date = datetime.now(UTC)
+    start_date = _range_start(range_key)
+    if start_date is not None:
+        return start_date, end_date
+
+    earliest_item = min(all_items, key=lambda item: item.created_at, default=None)
+    if earliest_item is None:
+        return end_date, end_date
+    return earliest_item.created_at.astimezone(UTC), end_date
+
+
+def _generate_bucket_labels(start_date: datetime, end_date: datetime, group_by: str) -> list[str]:
+    normalized_start = start_date.astimezone(UTC)
+    normalized_end = end_date.astimezone(UTC)
+
+    if group_by == "day":
+        current = normalized_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        final = normalized_end.replace(hour=0, minute=0, second=0, microsecond=0)
+        labels: list[str] = []
+        while current <= final:
+            labels.append(current.strftime("%Y-%m-%d"))
+            current += timedelta(days=1)
+        return labels
+
+    if group_by == "month":
+        current = normalized_start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        final = normalized_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        labels: list[str] = []
+        while current <= final:
+            labels.append(current.strftime("%Y-%m"))
+            if current.month == 12:
+                current = current.replace(year=current.year + 1, month=1)
+            else:
+                current = current.replace(month=current.month + 1)
+        return labels
+
+    current = (normalized_start - timedelta(days=normalized_start.weekday())).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    final = (normalized_end - timedelta(days=normalized_end.weekday())).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    labels = []
+    while current <= final:
+        iso_year, iso_week, _ = current.isocalendar()
+        labels.append(f"{iso_year}-W{iso_week:02d}")
+        current += timedelta(days=7)
+    return labels
 
 
 def _load_items(db: Session, user_id: int, range_key: str) -> list[KnowledgeItem]:

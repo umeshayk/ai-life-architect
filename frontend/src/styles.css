@@ -435,6 +435,80 @@ select {
   margin-bottom: 1rem;
 }
 
+.timeline-chart-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.timeline-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.timeline-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #334155;
+  font-size: 0.92rem;
+}
+
+.timeline-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.timeline-chart-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+  padding: 0.5rem;
+}
+
+.timeline-chart {
+  width: 100%;
+  min-width: 720px;
+  display: block;
+}
+
+.timeline-grid-line {
+  stroke: rgba(148, 163, 184, 0.35);
+  stroke-width: 1;
+}
+
+.timeline-axis-label {
+  fill: #64748b;
+  font-size: 12px;
+}
+
+.timeline-axis-label-y {
+  text-anchor: end;
+}
+
+.timeline-chart-point {
+  cursor: pointer;
+}
+
+.timeline-tooltip-box {
+  fill: rgba(15, 23, 42, 0.92);
+}
+
+.timeline-tooltip-text {
+  fill: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.timeline-tooltip-subtext {
+  fill: #cbd5e1;
+  font-size: 12px;
+}
+
 .timeline-list {
   display: flex;
   flex-direction: column;
