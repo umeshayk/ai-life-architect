@@ -3,12 +3,14 @@ import ForceGraph2D from "react-force-graph-2d";
 import api from "../api/client";
 
 const GROUP_COLORS = {
-  AI: "#2563eb",
-  Agriculture: "#15803d",
-  Mathematics: "#7c3aed",
-  Knowledge: "#ea580c",
+  AI: "#3b82f6",
+  Agriculture: "#22c55e",
+  Math: "#a855f7",
+  Mathematics: "#a855f7",
+  Business: "#f97316",
+  Knowledge: "#f97316",
   Spiritual: "#0891b2",
-  General: "#475569"
+  General: "#9ca3af"
 };
 
 function graphColor(group) {
@@ -18,6 +20,7 @@ function graphColor(group) {
 export default function BrainMap() {
   const fgRef = useRef(null);
   const shellRef = useRef(null);
+  const didAutoFitRef = useRef(false);
   const [graph, setGraph] = useState({ nodes: [], edges: [] });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
@@ -43,22 +46,44 @@ export default function BrainMap() {
     return () => window.removeEventListener("resize", updateSize);
   }, []);
 
+  const graphWithDegree = useMemo(() => {
+    const nodeDegree = {};
+    graph.edges.forEach((edge) => {
+      const sourceId = typeof edge.source === "object" ? edge.source.id : edge.source;
+      const targetId = typeof edge.target === "object" ? edge.target.id : edge.target;
+      nodeDegree[sourceId] = (nodeDegree[sourceId] || 0) + 1;
+      nodeDegree[targetId] = (nodeDegree[targetId] || 0) + 1;
+    });
+
+    return {
+      nodes: graph.nodes.map((node) => ({
+        ...node,
+        degree: nodeDegree[node.id] || 1
+      })),
+      edges: graph.edges.map((edge) => ({ ...edge }))
+    };
+  }, [graph]);
+
   const filteredData = useMemo(() => {
     const query = search.trim().toLowerCase();
     const nodes = query
-      ? graph.nodes.filter((node) => node.label.toLowerCase().includes(query))
-      : graph.nodes;
+      ? graphWithDegree.nodes.filter((node) => node.label.toLowerCase().includes(query))
+      : graphWithDegree.nodes;
     const nodeIds = new Set(nodes.map((node) => node.id));
-    const links = graph.edges
-      .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+    const links = graphWithDegree.edges
+      .filter((edge) => {
+        const sourceId = typeof edge.source === "object" ? edge.source.id : edge.source;
+        const targetId = typeof edge.target === "object" ? edge.target.id : edge.target;
+        return nodeIds.has(sourceId) && nodeIds.has(targetId);
+      })
       .map((edge) => ({ ...edge }));
     return {
       nodes: nodes.map((node) => ({ ...node })),
       links
     };
-  }, [graph, search]);
+  }, [graphWithDegree, search]);
 
-  const selectedNode = graph.nodes.find((node) => node.id === selectedNodeId) || null;
+  const selectedNode = graphWithDegree.nodes.find((node) => node.id === selectedNodeId) || null;
 
   useEffect(() => {
     if (!fgRef.current || !filteredData.nodes.length) {
@@ -66,15 +91,17 @@ export default function BrainMap() {
     }
 
     const graphApi = fgRef.current;
-    graphApi.d3Force("charge").strength(-520);
-    graphApi.d3Force("link").distance((link) => 140 + (link.weight || 1) * 18);
-    graphApi.d3Force("center").strength(0.22);
+    didAutoFitRef.current = false;
+    graphApi.d3Force("charge").strength(-900);
+    graphApi.d3Force("link").distance((link) => Math.max(180, graphSize.width / 6) + (link.weight || 1) * 20);
+    graphApi.d3Force("center").strength(0.3);
     graphApi.d3Force("collision", null);
+    graphApi.d3ReheatSimulation();
   }, [filteredData, graphSize]);
 
   const handleReset = () => {
     if (fgRef.current && filteredData.nodes.length) {
-      fgRef.current.zoomToFit(600, 70);
+      fgRef.current.zoomToFit(600, 40);
     }
   };
 
@@ -108,28 +135,35 @@ export default function BrainMap() {
               height={graphSize.height}
               graphData={filteredData}
               nodeRelSize={6}
+              nodeVal={(node) => Math.min(32, 5 + (node.degree || 1) * 3)}
               cooldownTicks={160}
-              onEngineStop={() => fgRef.current?.zoomToFit(900, 110)}
-              linkWidth={(link) => Math.max(1.5, Math.min(5, (link.weight || 1) * 1.2))}
+              onEngineStop={() => {
+                if (!didAutoFitRef.current && fgRef.current) {
+                  fgRef.current.zoomToFit(700, 40);
+                  didAutoFitRef.current = true;
+                }
+              }}
+              linkWidth={1.5}
               linkColor={() => "rgba(59, 130, 246, 0.38)"}
-              nodeLabel={(node) => `${node.label} (${node.group})`}
+              nodeLabel="id"
+              nodeColor={(node) => graphColor(node.group)}
+              enableNodeDrag={true}
               onNodeHover={(node) => setHoveredNodeId(node?.id || null)}
               onNodeClick={(node) => {
                 setSelectedNodeId(node.id);
                 fgRef.current?.centerAt(node.x, node.y, 500);
-                fgRef.current?.zoom(1.8, 500);
               }}
               nodeCanvasObject={(node, ctx, globalScale) => {
                 const label = node.label;
                 const fontSize = Math.max(11, 15 / globalScale);
-                const radius = node.size || 12;
+                const radius = Math.min(32, 5 + (node.degree || 1) * 3);
 
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
                 ctx.fillStyle = graphColor(node.group);
                 ctx.fill();
 
-                if (selectedNodeId === node.id || hoveredNodeId === node.id || (node.linked_count >= 4 && globalScale >= 0.9)) {
+                if (selectedNodeId === node.id || hoveredNodeId === node.id) {
                   ctx.font = `${fontSize}px Segoe UI`;
                   ctx.fillStyle = "#0f172a";
                   ctx.textAlign = "center";
