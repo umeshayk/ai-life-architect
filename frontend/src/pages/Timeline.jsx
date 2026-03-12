@@ -69,6 +69,7 @@ export default function Timeline() {
   const [groupBy, setGroupBy] = useState("week");
   const [timeline, setTimeline] = useState(null);
   const [evolution, setEvolution] = useState(null);
+  const [actionPlan, setActionPlan] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [hoveredPoint, setHoveredPoint] = useState(null);
@@ -77,20 +78,25 @@ export default function Timeline() {
     setLoading(true);
     setError("");
     try {
-      const [timelineResponse, evolutionResponse] = await Promise.all([
+      const [timelineResponse, evolutionResponse, actionPlanResponse] = await Promise.all([
         api.get("/api/timeline", {
           params: { range: nextRange, group_by: nextGroupBy }
         }),
         api.get("/api/timeline/evolution", {
           params: { range: nextRange, group_by: nextGroupBy, limit_topics: 5 }
+        }),
+        api.get("/api/timeline/action-plan", {
+          params: { range: nextRange, group_by: nextGroupBy }
         })
       ]);
       setTimeline(timelineResponse.data);
       setEvolution(evolutionResponse.data);
+      setActionPlan(actionPlanResponse.data.weekly_plan || []);
     } catch {
       setError("Unable to load the memory timeline right now.");
       setTimeline(null);
       setEvolution(null);
+      setActionPlan([]);
     } finally {
       setLoading(false);
     }
@@ -301,6 +307,26 @@ export default function Timeline() {
           </div>
         ) : (
           <p className="muted">No forecast available yet.</p>
+        )}
+      </section>
+
+      <section className="card">
+        <h3>Weekly Action Plan</h3>
+        {actionPlan.length ? (
+          <div className="stack compact">
+            {actionPlan.map((item) => (
+              <div key={`${item.domain}-${item.action}`} className="timeline-action-plan-card">
+                <div className="row-between">
+                  <h4>{item.domain}</h4>
+                  <span className="tag">{item.action}</span>
+                </div>
+                <p className="timeline-summary-value">{item.action}</p>
+                <p className="source-meta">{item.reason}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">No weekly plan available yet.</p>
         )}
       </section>
 

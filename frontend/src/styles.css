@@ -546,6 +546,18 @@ select {
   color: #0f172a;
 }
 
+.timeline-action-plan-card {
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  padding: 1rem;
+  background: #f8fbff;
+}
+
+.timeline-action-plan-card h4 {
+  margin: 0;
+  color: #0f172a;
+}
+
 .timeline-chart-shell {
   display: flex;
   flex-direction: column;
