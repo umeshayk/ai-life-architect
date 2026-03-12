@@ -422,6 +422,19 @@ select {
   color: #0f172a;
 }
 
+.timeline-insight-copy {
+  margin: 0 0 1rem;
+  color: #334155;
+  font-size: 1rem;
+}
+
+.timeline-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .timeline-list {
   display: flex;
   flex-direction: column;
@@ -499,6 +512,10 @@ select {
 
   .timeline-controls {
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .timeline-insight-grid {
     grid-template-columns: 1fr;
   }
 

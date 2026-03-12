@@ -58,6 +58,7 @@ export default function Timeline() {
   }, [range, groupBy]);
 
   const summary = timeline?.summary;
+  const insights = timeline?.insights;
   const groups = timeline?.groups || [];
   const topTopics = timeline?.top_topics || [];
   const hasItems = useMemo(() => groups.some((group) => group.count > 0), [groups]);
@@ -105,6 +106,39 @@ export default function Timeline() {
           <h3>Latest Saved</h3>
           <p className="timeline-summary-value">{summary?.latest_item_title || "-"}</p>
         </div>
+      </section>
+
+      <section className="card">
+        <h3>AI Insight Summary</h3>
+        <p className="timeline-insight-copy">{insights?.summary || "Not enough activity yet to generate insights."}</p>
+        <div className="timeline-insight-grid">
+          <div>
+            <h4>Dominant Topic</h4>
+            <p className="timeline-summary-value">{insights?.dominant_topic || "-"}</p>
+          </div>
+          <div>
+            <h4>Emerging Topics</h4>
+            {insights?.emerging_topics?.length ? (
+              <div className="tag-list">
+                {insights.emerging_topics.map((topic) => (
+                  <span key={topic} className="tag">{topic}</span>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No emerging topics detected yet.</p>
+            )}
+          </div>
+        </div>
+        {!!insights?.suggestions?.length && (
+          <>
+            <h4>Suggestions</h4>
+            <ul className="simple-list">
+              {insights.suggestions.map((suggestion) => (
+                <li key={suggestion}>{suggestion}</li>
+              ))}
+            </ul>
+          </>
+        )}
       </section>
 
       <section className="card">
@@ -157,7 +191,7 @@ export default function Timeline() {
                           </Link>
                         </h4>
                         <p className="source-meta">
-                          {typeLabel(item.type)} · {formatCreatedAt(item.created_at)}
+                          {typeLabel(item.type)} | {formatCreatedAt(item.created_at)}
                         </p>
                       </div>
                       <span className="tag">{typeLabel(item.type)}</span>

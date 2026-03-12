@@ -32,7 +32,15 @@ class TimelineSummary(BaseModel):
     latest_item_title: str | None
 
 
+class TimelineInsights(BaseModel):
+    summary: str
+    emerging_topics: list[str]
+    dominant_topic: str | None
+    suggestions: list[str]
+
+
 class TimelineResponse(BaseModel):
     groups: list[TimelineGroup]
     top_topics: list[TimelineTopicCount]
     summary: TimelineSummary
+    insights: TimelineInsights
