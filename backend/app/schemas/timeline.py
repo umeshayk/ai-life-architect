@@ -36,6 +36,9 @@ class TimelineInsights(BaseModel):
     summary: str
     emerging_topics: list[str]
     dominant_topic: str | None
+    fastest_topic: str | None
+    emerging_topic: str | None
+    stable_topic: str | None
     suggestions: list[str]
 
 

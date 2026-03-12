@@ -184,6 +184,20 @@ export default function Timeline() {
             )}
           </div>
         </div>
+        <div className="timeline-momentum-grid">
+          <div className="timeline-momentum-card">
+            <h4>Fastest Growing Topic</h4>
+            <p className="timeline-summary-value">{insights?.fastest_topic || "-"}</p>
+          </div>
+          <div className="timeline-momentum-card">
+            <h4>Emerging Topic</h4>
+            <p className="timeline-summary-value">{insights?.emerging_topic || "-"}</p>
+          </div>
+          <div className="timeline-momentum-card">
+            <h4>Stable Topic</h4>
+            <p className="timeline-summary-value">{insights?.stable_topic || "-"}</p>
+          </div>
+        </div>
         {!!insights?.suggestions?.length && (
           <>
             <h4>Suggestions</h4>

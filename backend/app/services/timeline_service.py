@@ -55,8 +55,9 @@ def get_timeline(db: Session, user_id: int, range_key: str = "30d", group_by: st
         for name, count in topic_counts.most_common(8)
         if count > 0
     ]
+    evolution = _build_evolution_data(items, all_items, normalized_range, normalized_group, limit_topics=8)
     summary = _build_summary(groups, top_topics)
-    insights = _build_insights(items, all_items, top_topics, normalized_range)
+    insights = _build_insights(items, all_items, top_topics, normalized_range, evolution)
     return TimelineResponse(groups=groups, top_topics=top_topics, summary=summary, insights=insights)
 
 
@@ -75,8 +76,18 @@ def get_timeline_evolution(
         return EvolutionResponse(labels=[], series=[])
 
     all_items = _load_items(db, user_id, "all")
-    start_date, end_date = _evolution_window(items, all_items, normalized_range)
-    labels = _generate_bucket_labels(start_date, end_date, normalized_group)
+    return _build_evolution_data(items, all_items, normalized_range, normalized_group, bounded_limit)
+
+
+def _build_evolution_data(
+    items: list[KnowledgeItem],
+    all_items: list[KnowledgeItem],
+    range_key: str,
+    group_by: str,
+    limit_topics: int,
+) -> EvolutionResponse:
+    start_date, end_date = _evolution_window(items, all_items, range_key)
+    labels = _generate_bucket_labels(start_date, end_date, group_by)
     if not labels:
         return EvolutionResponse(labels=[], series=[])
 
@@ -84,7 +95,7 @@ def get_timeline_evolution(
     topic_totals: Counter[str] = Counter()
 
     for item in items:
-        bucket = _bucket_key(item.created_at, normalized_group)
+        bucket = _bucket_key(item.created_at, group_by)
         topic_names = sorted(
             {
                 content_topic.topic.name
@@ -98,7 +109,7 @@ def get_timeline_evolution(
 
     top_topic_names = [
         topic_name
-        for topic_name, _ in topic_totals.most_common(bounded_limit)
+        for topic_name, _ in topic_totals.most_common(limit_topics)
     ]
     series = [
         EvolutionSeries(
@@ -266,12 +277,16 @@ def _build_insights(
     all_items: list[KnowledgeItem],
     top_topics: list[TimelineTopicCount],
     range_key: str,
+    evolution: EvolutionResponse,
 ) -> TimelineInsights:
     if len(items) < 2 or not top_topics:
         return TimelineInsights(
             summary="Not enough activity yet to generate insights.",
             emerging_topics=[],
             dominant_topic=None,
+            fastest_topic=None,
+            emerging_topic=None,
+            stable_topic=None,
             suggestions=[],
         )
 
@@ -283,6 +298,8 @@ def _build_insights(
 
     dominant_topic = top_topics[0].name if top_topics else None
     emerging_topics = _detect_emerging_topics(top_topics, all_topic_counts, range_key)
+    fastest_topic, emerging_topic, stable_topic = _detect_momentum(evolution)
+    emerging_topic = _select_curated_emerging_topic(evolution, emerging_topics, fastest_topic, emerging_topic)
     summary = _build_insight_summary(top_topics, dominant_topic, emerging_topics, range_key)
     suggestions = _build_suggestions(top_topics, emerging_topics)
 
@@ -290,8 +307,79 @@ def _build_insights(
         summary=summary,
         emerging_topics=emerging_topics,
         dominant_topic=dominant_topic,
+        fastest_topic=fastest_topic,
+        emerging_topic=emerging_topic,
+        stable_topic=stable_topic,
         suggestions=suggestions[:3],
     )
+
+
+def _select_curated_emerging_topic(
+    evolution: EvolutionResponse,
+    emerging_topics: list[str],
+    fastest_topic: str | None,
+    fallback_topic: str | None,
+) -> str | None:
+    if len(evolution.labels) < 2:
+        return fallback_topic
+
+    momentum_map = {
+        series.topic: (series.values[-2], series.values[-1])
+        for series in evolution.series
+    }
+    for topic_name in emerging_topics:
+        previous, current = momentum_map.get(topic_name, (0, 0))
+        if topic_name != fastest_topic and previous == 0 and current > 0:
+            return topic_name
+    return fallback_topic
+
+
+def _detect_momentum(evolution: EvolutionResponse) -> tuple[str | None, str | None, str | None]:
+    if len(evolution.labels) < 2 or not evolution.series:
+        return None, None, None
+
+    fastest_topic = None
+    fastest_growth = -1
+    emerging_topic = None
+    stable_candidates: list[tuple[int, int, str]] = []
+    growth_candidates: list[tuple[int, int, str]] = []
+    emerging_candidates: list[tuple[int, str]] = []
+
+    for series in evolution.series:
+        previous = series.values[-2]
+        current = series.values[-1]
+        growth = current - previous
+
+        growth_candidates.append((-growth, -current, series.topic))
+
+        if previous == 0 and current > 0:
+            emerging_candidates.append((-current, series.topic))
+        if growth > fastest_growth:
+            fastest_growth = growth
+            fastest_topic = series.topic
+
+        if previous > 0 and current > 0:
+            stable_candidates.append((abs(growth), -current, series.topic))
+
+    if fastest_topic is not None:
+        for _, topic_name in sorted(emerging_candidates):
+            if topic_name != fastest_topic:
+                emerging_topic = topic_name
+                break
+    if emerging_topic is None and emerging_candidates:
+        emerging_topic = sorted(emerging_candidates)[0][1]
+
+    stable_topic = None
+    for _, _, topic_name in sorted(stable_candidates):
+        if topic_name != fastest_topic and topic_name != emerging_topic:
+            stable_topic = topic_name
+            break
+    if stable_topic is None and stable_candidates:
+        stable_topic = sorted(stable_candidates)[0][2]
+    if fastest_topic is None and growth_candidates:
+        fastest_topic = sorted(growth_candidates)[0][2]
+
+    return fastest_topic, emerging_topic, stable_topic
 
 
 def _detect_emerging_topics(

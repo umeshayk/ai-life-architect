@@ -435,6 +435,24 @@ select {
   margin-bottom: 1rem;
 }
 
+.timeline-momentum-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.timeline-momentum-card {
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  padding: 1rem;
+  background: #f8fbff;
+}
+
+.timeline-momentum-card h4 {
+  margin: 0 0 0.4rem;
+}
+
 .timeline-chart-shell {
   display: flex;
   flex-direction: column;
@@ -590,6 +608,10 @@ select {
   }
 
   .timeline-insight-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .timeline-momentum-grid {
     grid-template-columns: 1fr;
   }
 
