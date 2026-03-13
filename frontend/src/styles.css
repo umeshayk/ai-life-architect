@@ -1171,3 +1171,241 @@ select {
   align-items: center;
   gap: 0.85rem;
 }
+
+
+.mentor-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.mentor-quick-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.mentor-quick-chip {
+  background: #f8fbff;
+  border: 1px solid #dbeafe;
+  color: #1d4ed8;
+  padding: 0.55rem 0.8rem;
+}
+
+.mentor-response-card {
+  background: linear-gradient(180deg, #fbfdff 0%, #f8fbff 100%);
+}
+
+.mentor-answer {
+  margin: 0.25rem 0 0;
+  color: #0f172a;
+}
+
+.mentor-section {
+  margin-top: 0.85rem;
+}
+
+.mentor-inline-copy {
+  margin: 0.25rem 0 0;
+  color: #334155;
+}
+
+.mentor-topic-row {
+  gap: 0.85rem;
+  align-items: center;
+}
+
+@media (max-width: 900px) {
+  .mentor-input-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mentor-recommendation-card {
+  padding: 1rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+}
+
+.mentor-recommendation-label {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.mentor-topic-link {
+  margin-top: 0.2rem;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.mentor-recommendation-why {
+  margin-top: 1rem;
+}
+
+.mentor-recommendation-subtitle {
+  margin: 0 0 0.25rem;
+  color: #0f172a;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.mentor-recommendation-actions {
+  margin-top: 1rem;
+}
+
+.mentor-path-progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin: 0.55rem 0 0.4rem;
+}
+
+.mentor-path-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #16a34a 0%, #2563eb 100%);
+}
+
+.mentor-follow-up-section {
+  padding-top: 0.25rem;
+  border-top: 1px solid #e2e8f0;
+}
+.mentor-section.first {
+  margin-top: 0;
+}
+
+.mentor-path-topic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+.mentor-path-topic-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.mentor-path-topic-button {
+  padding: 0;
+  text-align: left;
+  color: #334155;
+  font-weight: 500;
+}
+
+.mentor-path-topic-row.current .mentor-path-topic-button {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.mentor-path-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  flex-shrink: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.mentor-path-state-icon.covered {
+  color: #15803d;
+}
+
+.mentor-path-state-icon.current {
+  color: #b45309;
+}
+
+.mentor-path-state-icon.missing {
+  color: #94a3b8;
+}
+
+.mentor-target-icon {
+  position: relative;
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  border: 2px solid #ef4444;
+  margin-right: 0.45rem;
+  flex-shrink: 0;
+}
+
+.mentor-target-icon::before,
+.mentor-target-icon::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+}
+
+.mentor-target-icon::before {
+  inset: 0.18rem;
+  border: 2px solid #2563eb;
+}
+
+.mentor-target-icon::after {
+  inset: 0.38rem;
+  background: #0f766e;
+}
+.mentor-path-state-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+}
+
+.mentor-path-state-icon::before,
+.mentor-path-state-icon::after {
+  content: "";
+  position: absolute;
+}
+
+.mentor-path-state-icon.covered {
+  background: #dcfce7;
+}
+
+.mentor-path-state-icon.covered::before {
+  width: 0.28rem;
+  height: 0.52rem;
+  border-right: 2px solid #15803d;
+  border-bottom: 2px solid #15803d;
+  transform: translateY(-0.05rem) rotate(45deg);
+}
+
+.mentor-path-state-icon.current {
+  background: #fef3c7;
+}
+
+.mentor-path-state-icon.current::before {
+  inset: 0.18rem;
+  border: 2px solid #d97706;
+  border-radius: 999px;
+}
+
+.mentor-path-state-icon.current::after {
+  width: 0.12rem;
+  height: 0.34rem;
+  background: #d97706;
+  border-radius: 999px;
+  top: 0.24rem;
+  left: 0.49rem;
+  box-shadow: 0 0.28rem 0 0 #d97706;
+}
+
+.mentor-path-state-icon.missing {
+  border: 1.5px solid #94a3b8;
+  background: #f8fafc;
+}

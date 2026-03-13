@@ -3,6 +3,7 @@ import ForceGraph2D from "react-force-graph-2d";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import LearningPathsPanel from "../components/LearningPathsPanel";
+import AIMentorPanel from "../components/AIMentorPanel";
 
 const GROUP_COLORS = {
   AI: "#3b82f6",
@@ -905,6 +906,11 @@ export default function BrainMap() {
           <LearningPathsPanel
             learningPaths={learningPaths}
             error={learningPathsError}
+            onTopicClick={handleSuggestedTopicClick}
+            onTopicAction={handleSuggestionAction}
+          />
+
+          <AIMentorPanel
             onTopicClick={handleSuggestedTopicClick}
             onTopicAction={handleSuggestionAction}
           />
