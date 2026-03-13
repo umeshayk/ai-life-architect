@@ -18,7 +18,20 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     payload = decode_token(token)
     if not payload or "sub" not in payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token")
-    user = db.scalar(select(User).where(User.id == int(payload["sub"])))
+
+    subject = payload["sub"]
+    user = None
+
+    if isinstance(subject, dict):
+        subject = subject.get("sub") or subject.get("email") or subject.get("id")
+
+    if isinstance(subject, str) and subject.isdigit():
+        user = db.scalar(select(User).where(User.id == int(subject)))
+    elif isinstance(subject, int):
+        user = db.scalar(select(User).where(User.id == subject))
+    elif isinstance(subject, str) and "@" in subject:
+        user = db.scalar(select(User).where(User.email == subject.lower()))
+
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user

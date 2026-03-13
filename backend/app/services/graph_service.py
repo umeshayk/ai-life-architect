@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.schemas.graph import GraphEdge, GraphNode, GraphResponse
+from app.services.topic_hierarchy_service import build_hierarchy_graph
 
 
 TOPIC_CATEGORY_MAP = {
@@ -32,6 +33,8 @@ TOPIC_CATEGORY_MAP = {
 
 
 def _topic_group(topic_name: str) -> str:
+    if topic_name == "Real Estate" or topic_name.endswith(" Property"):
+        return "Business"
     return TOPIC_CATEGORY_MAP.get(topic_name, "General")
 
 
@@ -105,5 +108,18 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
         for (source, target), weight in pair_counts.most_common(60)
         if source in top_topic_set and target in top_topic_set
     ]
+
+    hierarchy_nodes, hierarchy_edges = build_hierarchy_graph(
+        Counter({topic_name: topic_counts[topic_name] for topic_name in top_topic_names}),
+        {topic_name: topic_to_titles[topic_name] for topic_name in top_topic_names},
+        _topic_group,
+    )
+
+    existing_node_ids = {node.id for node in nodes}
+    for node in hierarchy_nodes:
+        if node.id not in existing_node_ids:
+            nodes.append(node)
+            existing_node_ids.add(node.id)
+    edges.extend(hierarchy_edges)
 
     return GraphResponse(nodes=nodes, edges=edges)

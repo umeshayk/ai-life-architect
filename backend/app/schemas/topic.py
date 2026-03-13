@@ -26,6 +26,11 @@ class TopicRebuildResponse(BaseModel):
     discovery_method: str = "discovered"
 
 
+class TopicCleanupResponse(BaseModel):
+    merged_topics: int
+    discovery_method: str = "normalized"
+
+
 class TopicItemsResponse(BaseModel):
     topic: TopicSummary
     items: list[KnowledgeResponse]

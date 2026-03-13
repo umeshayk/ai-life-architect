@@ -11,9 +11,16 @@ from app.models.topic import Topic
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.routers.knowledge import serialize_knowledge
-from app.schemas.topic import TopicDetailResponse, TopicItemsResponse, TopicNoteSummary, TopicRebuildResponse, TopicSummary
+from app.schemas.topic import (
+    TopicCleanupResponse,
+    TopicDetailResponse,
+    TopicItemsResponse,
+    TopicNoteSummary,
+    TopicRebuildResponse,
+    TopicSummary,
+)
 from app.services.retrieval import _extract_item_concepts
-from app.services.topic_service import discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
+from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
 
 
 router = APIRouter(tags=["topics"])
@@ -154,3 +161,9 @@ def reassign_user_topics(db: Session = Depends(get_db), current_user: User = Dep
         links_created=links_created,
         discovery_method="discovered",
     )
+
+
+@router.post("/api/topics/cleanup", response_model=TopicCleanupResponse)
+def cleanup_user_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    merged_topics = cleanup_topics(db, current_user.id)
+    return TopicCleanupResponse(merged_topics=merged_topics, discovery_method="normalized")

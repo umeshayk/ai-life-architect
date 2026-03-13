@@ -9,6 +9,7 @@ from app.models.knowledge import KnowledgeItem
 from app.models.knowledge_connection import KnowledgeConnection
 from app.models.topic import Topic
 from app.services.topic_extractor import extract_topic_phrases, tokenize_topic_segment
+from app.services.topic_normalizer_service import get_or_create_normalized_topic, merge_similar_topics, normalize_topic_label
 
 
 STOP_WORDS = {
@@ -242,8 +243,8 @@ def normalize_topic_name(value: str) -> str:
         "api": "API",
         "fastapi": "FastAPI",
     }
-    final_label = " ".join(display_words.get(word, word.title()) for word in singular_normalized.split())
-    return final_label.strip()
+    final_label = " ".join(display_words.get(word, word.title()) for word in singular_normalized.split()).strip()
+    return normalize_topic_label(final_label) or final_label
 
 
 def _match_topic_patterns(normalized: str) -> str:
@@ -319,6 +320,26 @@ def _merge_ranked_topics(ranked: list[tuple[str, float]], local_scores: Counter[
             break
 
     return deduped[:3]
+
+
+def _dedupe_normalized_assignments(assignments: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    deduped: dict[str, tuple[str, float]] = {}
+    order: list[str] = []
+
+    for label, confidence in assignments:
+        normalized_label = normalize_topic_label(label) or label
+        key = _normalize_words(normalized_label)
+        if not key:
+            continue
+        existing = deduped.get(key)
+        if existing is None:
+            deduped[key] = (normalized_label, confidence)
+            order.append(key)
+            continue
+        if confidence > existing[1]:
+            deduped[key] = (normalized_label, confidence)
+
+    return [deduped[key] for key in order[:3]]
 
 
 def _is_canonical_topic(label: str) -> bool:
@@ -428,7 +449,7 @@ def _build_item_topic_assignments(
             for label, confidence in deduped[1:]
             if confidence >= max(primary[0][1] * 0.72, 0.58)
         ]
-        assignments[item.id] = (primary + secondaries)[:3]
+        assignments[item.id] = _dedupe_normalized_assignments((primary + secondaries)[:3])
 
     return assignments, item_candidates
 
@@ -464,13 +485,19 @@ def discover_topic_assignments(items: list[KnowledgeItem]) -> dict[int, list[tup
 
 
 def _get_or_create_topic(db: Session, user_id: int, name: str) -> tuple[Topic, bool]:
-    topic = db.scalar(select(Topic).where(Topic.user_id == user_id, Topic.name == name))
-    if topic is not None:
-        return topic, False
-    topic = Topic(user_id=user_id, name=name)
-    db.add(topic)
-    db.flush()
-    return topic, True
+    topic, created = get_or_create_normalized_topic(db, user_id, name)
+    if topic is None:
+        fallback_name = normalize_topic_label(name)
+        if not fallback_name:
+            fallback_name = name.strip()
+        topic = db.scalar(select(Topic).where(Topic.user_id == user_id, Topic.name == fallback_name))
+        if topic is not None:
+            return topic, False
+        topic = Topic(user_id=user_id, name=fallback_name)
+        db.add(topic)
+        db.flush()
+        return topic, True
+    return topic, created
 
 
 def _load_user_items(db: Session, user_id: int) -> list[KnowledgeItem]:
@@ -490,8 +517,12 @@ def assign_topics_for_item(db: Session, item: KnowledgeItem) -> tuple[int, int]:
 
     topics_created = 0
     links_created = 0
+    seen_topic_ids: set[int] = set()
     for label, confidence in item_assignments:
         topic, created = _get_or_create_topic(db, item.user_id, label)
+        if topic.id in seen_topic_ids:
+            continue
+        seen_topic_ids.add(topic.id)
         if created:
             topics_created += 1
         db.add(
@@ -526,8 +557,12 @@ def discover_topics_for_user(db: Session, user_id: int, reset_topics: bool = Tru
     topics_created = 0
     links_created = 0
     for item in items:
+        seen_topic_ids: set[int] = set()
         for label, confidence in assignments.get(item.id, []):
             topic, created = _get_or_create_topic(db, user_id, label)
+            if topic.id in seen_topic_ids:
+                continue
+            seen_topic_ids.add(topic.id)
             if created:
                 topics_created += 1
             db.add(
@@ -540,6 +575,7 @@ def discover_topics_for_user(db: Session, user_id: int, reset_topics: bool = Tru
             )
             links_created += 1
     db.commit()
+    merge_similar_topics(db, user_id)
     return len(items), topics_created, links_created
 
 

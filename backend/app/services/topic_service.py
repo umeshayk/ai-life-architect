@@ -8,6 +8,7 @@ from app.models.knowledge import KnowledgeItem
 from app.models.topic import Topic
 from app.services.topic_discovery_service import assign_topics_for_item as assign_topics_directly_for_item
 from app.services.topic_discovery_service import discover_topics_for_user, reassign_topics_for_user
+from app.services.topic_normalizer_service import merge_similar_topics
 
 
 def assign_topics_to_item(db: Session, item: KnowledgeItem) -> tuple[int, int]:
@@ -25,6 +26,10 @@ def discover_topics(db: Session, user_id: int) -> tuple[int, int, int]:
 
 def reassign_topics(db: Session, user_id: int) -> tuple[int, int, int]:
     return reassign_topics_for_user(db, user_id)
+
+
+def cleanup_topics(db: Session, user_id: int) -> int:
+    return merge_similar_topics(db, user_id)
 
 
 def get_topics_with_counts(db: Session, user_id: int) -> list[tuple[Topic, int]]:
