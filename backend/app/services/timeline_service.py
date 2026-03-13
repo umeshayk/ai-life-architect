@@ -170,7 +170,8 @@ def get_knowledge_growth(db: Session, user_id: int) -> KnowledgeGrowthResponse:
             timeline=[],
         )
 
-    weekly_growth = len(_load_items(db, user_id, "7d"))
+    weekly_cutoff = datetime.now(UTC) - timedelta(days=7)
+    weekly_growth = sum(1 for item in all_items if item.created_at.astimezone(UTC) >= weekly_cutoff)
     topic_counts: Counter[str] = Counter()
     cumulative_topics: set[str] = set()
     monthly_notes: dict[str, int] = {}

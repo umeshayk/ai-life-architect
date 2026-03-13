@@ -196,8 +196,8 @@ export default function BrainMap() {
             <p className="muted">{selectedNode.linked_count} linked item(s)</p>
             {selectedNode.linked_titles?.length > 0 ? (
               <ul className="simple-list">
-                {selectedNode.linked_titles.map((title) => (
-                  <li key={`${selectedNode.id}-${title}`}>{title}</li>
+                {selectedNode.linked_titles.map((title, index) => (
+                  <li key={`${selectedNode.id}-${index}-${title}`}>{title}</li>
                 ))}
               </ul>
             ) : (

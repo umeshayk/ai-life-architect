@@ -20,6 +20,7 @@ export default function KnowledgeGrowth({ growth }) {
         <div className="result-item">
           <h4>📈 Weekly Growth</h4>
           <p className="metric">+{growth.weekly_growth}</p>
+          <p className="source-meta">notes last 7 days</p>
         </div>
         <div className="result-item">
           <h4>🔥 Fastest Topic</h4>
