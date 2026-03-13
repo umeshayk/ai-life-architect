@@ -68,3 +68,22 @@ class NextLearningTopic(BaseModel):
     action: str = "add"
     priority: int
     topic_exists: bool = False
+
+
+class LearningPathTopic(BaseModel):
+    topic: str
+    state: str = "missing"
+    action: str = "add"
+    domain: str | None = None
+
+
+class LearningPathResponse(BaseModel):
+    path_name: str
+    domain: str
+    progress_percent: int
+    covered_count: int
+    total_count: int
+    next_topic: LearningPathTopic | None = None
+    topics: list[LearningPathTopic]
+    completed_topics: list[str] = []
+    upcoming_topics: list[str] = []

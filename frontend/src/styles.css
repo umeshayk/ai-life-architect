@@ -1055,3 +1055,119 @@ select {
 }
 
 
+
+
+.learning-path-card {
+  background: linear-gradient(180deg, #fbfdff 0%, #f8fbff 100%);
+}
+
+.learning-path-header {
+  align-items: flex-start;
+}
+
+.learning-path-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.02rem;
+  color: #0f172a;
+}
+
+.learning-path-progress {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin: 0.8rem 0 0.35rem;
+}
+
+.learning-path-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #16a34a 0%, #2563eb 100%);
+}
+
+.learning-path-percent {
+  margin-bottom: 0.65rem;
+}
+
+.learning-path-topic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.learning-path-topic-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #334155;
+}
+
+.learning-path-topic-row.next {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.learning-path-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.learning-path-state-svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  display: block;
+}
+
+.learning-path-state-icon.covered {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.learning-path-state-icon.started {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.learning-path-state-icon.missing {
+  background: #f8fafc;
+  color: #94a3b8;
+  border: 1px solid #cbd5e1;
+}
+
+.learning-path-topic-name {
+  flex: 1;
+}
+
+.learning-path-topic-button {
+  flex: 1;
+  text-align: left;
+}
+
+.learning-path-next-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.learning-path-next-block {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.learning-path-next-row {
+  align-items: center;
+  gap: 0.85rem;
+}

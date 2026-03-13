@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client";
+import LearningPathsPanel from "../components/LearningPathsPanel";
 
 const GROUP_COLORS = {
   AI: "#3b82f6",
@@ -353,18 +354,18 @@ export default function BrainMap() {
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
-  const [suggestions, setSuggestions] = useState([]);
-  const [suggestionsError, setSuggestionsError] = useState("");
+  const [learningPaths, setLearningPaths] = useState([]);
+  const [learningPathsError, setLearningPathsError] = useState("");
   const [graphSize, setGraphSize] = useState({ width: 1200, height: 920 });
 
   useEffect(() => {
     api
-      .get("/api/next-learning-topics")
+      .get("/api/learning-paths")
       .then((response) => {
-        setSuggestions(response.data || []);
-        setSuggestionsError("");
+        setLearningPaths(response.data || []);
+        setLearningPathsError("");
       })
-      .catch((err) => setSuggestionsError(err.response?.data?.detail || "Unable to load next learning topics."));
+      .catch((err) => setLearningPathsError(err.response?.data?.detail || "Unable to load learning paths."));
   }, []);
 
   useEffect(() => {
@@ -901,50 +902,12 @@ export default function BrainMap() {
         </div>
 
         <aside className="brain-map-side-column">
-          <section className="card brain-side-card">
-            <h3>Next 5 Things You Should Learn</h3>
-            <p className="muted">Based on your current knowledge graph, these are the next best topics to learn.</p>
-            {suggestionsError && <p className="error-text">{suggestionsError}</p>}
-            {!suggestionsError && suggestions.length === 0 ? (
-          <p className="muted">No strong next-step topics detected yet. Keep adding knowledge to unlock your learning queue.</p>
-        ) : (
-              <div className="stack compact">
-                {suggestions.map((suggestion) => (
-                  <article key={getSuggestionLabel(suggestion)} className="result-item suggestion-card">
-                <div className="row-between suggestion-card-header">
-                  <div>
-                    <p className="source-meta suggestion-priority">{suggestion.priority}. Next up</p>
-                    <button
-                      type="button"
-                      className="link-button related-note-button suggestion-topic-link"
-                      onClick={() => handleSuggestedTopicClick(suggestion)}
-                    >
-                      <DomainTopicIcon domain={suggestion.domain} />
-                      <span>{getSuggestionLabel(suggestion)}</span>
-                    </button>
-                  </div>
-                  <span className="tag">{suggestion.domain}</span>
-                </div>
-                <p className="muted">{suggestion.reason}</p>
-                <p className="source-meta">Confidence: {Math.round((suggestion.confidence || 0) * 100)}%</p>
-                <div className="brain-detail-actions">
-                  <button
-                    type="button"
-                    className={`suggestion-action-button ${suggestion.action === "focus" ? "focus" : "add"}`}
-                    onClick={() => handleSuggestionAction(suggestion)}
-                  >
-                    <span
-                      className={`suggestion-action-icon ${suggestion.action === "focus" ? "focus" : "add"}`}
-                      aria-hidden="true"
-                    />
-                    <span>{suggestion.action === "focus" ? "Focus Topic" : "Add Topic"}</span>
-                  </button>
-                </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
+          <LearningPathsPanel
+            learningPaths={learningPaths}
+            error={learningPathsError}
+            onTopicClick={handleSuggestedTopicClick}
+            onTopicAction={handleSuggestionAction}
+          />
 
           <section className="card brain-side-card">
             <h3>Details</h3>
