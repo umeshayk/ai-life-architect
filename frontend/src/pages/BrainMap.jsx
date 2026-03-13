@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
+import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 
 const GROUP_COLORS = {
@@ -18,6 +19,7 @@ function graphColor(group) {
 }
 
 export default function BrainMap() {
+  const navigate = useNavigate();
   const fgRef = useRef(null);
   const shellRef = useRef(null);
   const didAutoFitRef = useRef(false);
@@ -84,6 +86,41 @@ export default function BrainMap() {
   }, [graphWithDegree, search]);
 
   const selectedNode = graphWithDegree.nodes.find((node) => node.id === selectedNodeId) || null;
+  const selectedGroup = selectedNode?.group || null;
+  const availableGroups = useMemo(() => {
+    const groups = new Set(filteredData.nodes.map((node) => node.group));
+    return Object.entries(GROUP_COLORS).map(([group, color]) => ({
+      group,
+      color,
+      hasNodes: groups.has(group)
+    }));
+  }, [filteredData.nodes]);
+  const focusContext = useMemo(() => {
+    if (!selectedNodeId) {
+      return { neighborIds: new Set(), connectedEdges: new Set(), connectedLabels: [] };
+    }
+
+    const neighborIds = new Set([selectedNodeId]);
+    const connectedEdges = new Set();
+    const connectedLabelSet = new Set();
+
+    filteredData.links.forEach((edge) => {
+      const sourceId = typeof edge.source === "object" ? edge.source.id : edge.source;
+      const targetId = typeof edge.target === "object" ? edge.target.id : edge.target;
+      const edgeKey = `${sourceId}->${targetId}`;
+      if (sourceId === selectedNodeId) {
+        neighborIds.add(targetId);
+        connectedEdges.add(edgeKey);
+        connectedLabelSet.add(targetId);
+      } else if (targetId === selectedNodeId) {
+        neighborIds.add(sourceId);
+        connectedEdges.add(edgeKey);
+        connectedLabelSet.add(sourceId);
+      }
+    });
+
+    return { neighborIds, connectedEdges, connectedLabels: Array.from(connectedLabelSet) };
+  }, [filteredData, selectedNodeId]);
 
   useEffect(() => {
     if (!fgRef.current || !filteredData.nodes.length) {
@@ -99,8 +136,28 @@ export default function BrainMap() {
     graphApi.d3ReheatSimulation();
   }, [filteredData, graphSize]);
 
+  const focusNode = (nodeId) => {
+    setSelectedNodeId(nodeId);
+    const targetNode = filteredData.nodes.find((node) => node.id === nodeId);
+    if (targetNode && fgRef.current) {
+      fgRef.current.centerAt(targetNode.x, targetNode.y, 500);
+      fgRef.current.zoom(2.1, 500);
+    }
+  };
+
+  const focusGroup = (group) => {
+    const candidate = [...filteredData.nodes]
+      .filter((node) => node.group === group)
+      .sort((left, right) => (right.degree || 0) - (left.degree || 0))[0];
+    if (!candidate) {
+      return;
+    }
+    focusNode(candidate.id);
+  };
+
   const handleReset = () => {
     if (fgRef.current && filteredData.nodes.length) {
+      setSelectedNodeId(null);
       fgRef.current.zoomToFit(600, 40);
     }
   };
@@ -123,6 +180,21 @@ export default function BrainMap() {
             Reset View
           </button>
         </div>
+        <div className="brain-map-legend">
+          {availableGroups.map(({ group, color, hasNodes }) => (
+            <button
+              key={group}
+              type="button"
+              className={`brain-map-legend-chip ${selectedGroup === group ? "active" : ""} ${!hasNodes ? "disabled" : ""}`}
+              onClick={() => focusGroup(group)}
+              title={hasNodes ? `Focus ${group}` : `No ${group} nodes in this view`}
+              disabled={!hasNodes}
+            >
+              <span className="brain-map-legend-dot" style={{ backgroundColor: color }} />
+              {group}
+            </button>
+          ))}
+        </div>
 
         {error && <p className="error-text">{error}</p>}
         {!error && filteredData.nodes.length === 0 ? (
@@ -143,38 +215,67 @@ export default function BrainMap() {
                   didAutoFitRef.current = true;
                 }
               }}
-              linkWidth={1.5}
-              linkColor={() => "rgba(59, 130, 246, 0.38)"}
+              linkWidth={(link) => {
+                if (!selectedNodeId) {
+                  return 1.6;
+                }
+                const sourceId = typeof link.source === "object" ? link.source.id : link.source;
+                const targetId = typeof link.target === "object" ? link.target.id : link.target;
+                const isConnected = sourceId === selectedNodeId || targetId === selectedNodeId;
+                return isConnected ? 2.8 : 0.8;
+              }}
+              linkColor={(link) => {
+                if (!selectedNodeId) {
+                  return "rgba(59, 130, 246, 0.38)";
+                }
+                const sourceId = typeof link.source === "object" ? link.source.id : link.source;
+                const targetId = typeof link.target === "object" ? link.target.id : link.target;
+                const isConnected = sourceId === selectedNodeId || targetId === selectedNodeId;
+                return isConnected ? "rgba(37, 99, 235, 0.82)" : "rgba(148, 163, 184, 0.14)";
+              }}
               nodeLabel="id"
-              nodeColor={(node) => graphColor(node.group)}
+              nodeColor={(node) => {
+                if (!selectedNodeId) {
+                  return graphColor(node.group);
+                }
+                return focusContext.neighborIds.has(node.id) ? graphColor(node.group) : "rgba(203, 213, 225, 0.28)";
+              }}
               enableNodeDrag={true}
               onNodeHover={(node) => setHoveredNodeId(node?.id || null)}
-              onNodeClick={(node) => {
-                setSelectedNodeId(node.id);
-                fgRef.current?.centerAt(node.x, node.y, 500);
-              }}
+              onNodeClick={(node) => focusNode(node.id)}
               nodeCanvasObject={(node, ctx, globalScale) => {
                 const label = node.label;
                 const fontSize = Math.max(11, 15 / globalScale);
                 const radius = Math.min(32, 5 + (node.degree || 1) * 3);
+                const isSelected = selectedNodeId === node.id;
+                const isNeighbor = focusContext.neighborIds.has(node.id);
+                const isDimmed = selectedNodeId && !isNeighbor;
 
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+                ctx.globalAlpha = isDimmed ? 0.2 : 1;
                 ctx.fillStyle = graphColor(node.group);
                 ctx.fill();
+                ctx.globalAlpha = 1;
 
-                if (selectedNodeId === node.id || hoveredNodeId === node.id) {
+                if (isSelected || hoveredNodeId === node.id) {
                   ctx.font = `${fontSize}px Segoe UI`;
                   ctx.fillStyle = "#0f172a";
                   ctx.textAlign = "center";
                   ctx.fillText(label, node.x, node.y + radius + fontSize + 2);
                 }
 
-                if (selectedNodeId === node.id) {
+                if (isSelected) {
                   ctx.beginPath();
                   ctx.arc(node.x, node.y, radius + 4, 0, 2 * Math.PI, false);
                   ctx.strokeStyle = "#f97316";
                   ctx.lineWidth = 2.5;
+                  ctx.stroke();
+                } else if (selectedNodeId && isNeighbor) {
+                  ctx.beginPath();
+                  ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI, false);
+                  ctx.strokeStyle = "rgba(37, 99, 235, 0.42)";
+                  ctx.lineWidth = 2;
                   ctx.stroke();
                 }
               }}
@@ -192,17 +293,61 @@ export default function BrainMap() {
             <div className="brain-detail-header">
               <strong>{selectedNode.label}</strong>
               <span className="tag">{selectedNode.group}</span>
+              <span className="tag">{selectedNode.type}</span>
             </div>
             <p className="muted">{selectedNode.linked_count} linked item(s)</p>
+            {!!focusContext.connectedLabels.length && (
+              <div>
+                <p className="source-meta">Directly connected topics</p>
+                <div className="tag-list">
+                  {focusContext.connectedLabels.map((label) => (
+                    <button
+                      key={`${selectedNode.id}-${label}`}
+                      type="button"
+                      className="tag tag-button"
+                      onClick={() => focusNode(label)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {selectedNode.linked_titles?.length > 0 ? (
-              <ul className="simple-list">
-                {selectedNode.linked_titles.map((title, index) => (
-                  <li key={`${selectedNode.id}-${index}-${title}`}>{title}</li>
-                ))}
-              </ul>
+              <div>
+                <p className="source-meta">Linked notes</p>
+                <ul className="simple-list">
+                  {selectedNode.linked_titles.map((title, index) => (
+                    <li key={`${selectedNode.id}-${index}-${title}`}>{title}</li>
+                  ))}
+                </ul>
+              </div>
             ) : (
               <p className="muted">No linked knowledge items.</p>
             )}
+            <p className="source-meta">
+              Suggested next step: {focusContext.connectedLabels[0] ? `Explore ${focusContext.connectedLabels[0]}` : "Open this topic to review its notes."}
+            </p>
+            <div className="brain-detail-actions">
+              {selectedNode.type === "topic" && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => navigate(`/topics/${encodeURIComponent(selectedNode.label)}`)}
+                >
+                  Open Topic Page
+                </button>
+              )}
+              {(selectedNode.type === "knowledge" || selectedNode.type === "note") && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => navigate(`/knowledge?focus=${encodeURIComponent(selectedNode.id)}`)}
+                >
+                  Open Note
+                </button>
+              )}
+            </div>
           </div>
         )}
       </section>
