@@ -53,8 +53,7 @@ def get_topic_items(topic_id: int, db: Session = Depends(get_db), current_user: 
     )
 
 
-@router.get("/api/topics/{topic_name}", response_model=TopicDetailResponse)
-def get_topic_by_name(topic_name: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def _build_topic_detail(topic_name: str, db: Session, current_user: User) -> TopicDetailResponse:
     normalized_topic_name = topic_name.strip().lower()
     topic = db.scalar(
         select(Topic).where(
@@ -112,6 +111,16 @@ def get_topic_by_name(topic_name: str, db: Session = Depends(get_db), current_us
         notes=[_build_topic_note_summary(item) for item in matched_items],
         related_topics=[name for name, _ in related_counter.most_common(5)],
     )
+
+
+@router.get("/api/topics/detail", response_model=TopicDetailResponse)
+def get_topic_detail(name: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return _build_topic_detail(name, db, current_user)
+
+
+@router.get("/api/topics/{topic_name}", response_model=TopicDetailResponse)
+def get_topic_by_name(topic_name: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return _build_topic_detail(topic_name, db, current_user)
 
 
 @router.post("/api/topics/rebuild", response_model=TopicRebuildResponse)

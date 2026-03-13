@@ -17,7 +17,9 @@ export default function Topic() {
       setLoading(true);
       setError("");
       try {
-        const response = await api.get(`/api/topics/${encodeURIComponent(topic)}`);
+        const response = await api.get("/api/topics/detail", {
+          params: { name: topic }
+        });
         setData(response.data);
       } catch (err) {
         setError(err.response?.data?.detail || "Unable to load this topic.");
