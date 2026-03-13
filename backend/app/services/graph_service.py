@@ -1,5 +1,8 @@
 from collections import Counter, defaultdict
+import logging
 from itertools import combinations
+from threading import Lock
+from time import monotonic
 
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session, selectinload
@@ -8,7 +11,10 @@ from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.schemas.graph import GraphEdge, GraphNode, GraphResponse
 from app.services.topic_bridge_service import build_topic_bridges
-from app.services.topic_hierarchy_service import build_hierarchy_graph
+from app.services.topic_hierarchy_service import infer_topic_hierarchy, sync_topic_hierarchy_metadata
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 TOPIC_CATEGORY_MAP = {
@@ -31,6 +37,11 @@ TOPIC_CATEGORY_MAP = {
     "AI Life Architect": "Knowledge",
     "Travel / Spiritual": "Spiritual",
 }
+MAX_TOPIC_COUNT = 36
+MAX_ITEM_COUNT = 24
+BRIDGE_CACHE_TTL_SECONDS = 45
+_BRIDGE_CACHE: dict[tuple[int, tuple[str, ...], tuple[tuple[str, int], ...]], tuple[float, dict]] = {}
+_BRIDGE_CACHE_LOCK = Lock()
 
 
 def _topic_group(topic_name: str) -> str:
@@ -41,30 +52,79 @@ def _topic_group(topic_name: str) -> str:
     return TOPIC_CATEGORY_MAP.get(topic_name, "General")
 
 
-def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
+def _empty_response(level: int, domain: str | None = None, topic: str | None = None) -> GraphResponse:
+    return GraphResponse(nodes=[], edges=[], level=level, domain=domain, topic=topic, available_domains=[])
+
+
+def _dedupe_titles(values: list[str], limit: int = 12) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
+def _topic_node(
+    topic_name: str,
+    topic_counts: Counter[str],
+    connection_counts: Counter[str],
+    topic_to_titles: dict[str, list[str]],
+    *,
+    base_scale: float = 1.15,
+    max_size: float = 18,
+) -> GraphNode:
+    importance = round(topic_counts[topic_name] * base_scale + connection_counts[topic_name] * 0.9, 2)
+    return GraphNode(
+        id=topic_name,
+        label=topic_name,
+        type="topic",
+        group=_topic_group(topic_name),
+        size=5 + min(max_size, importance * 1.35),
+        importance=importance,
+        connection_count=connection_counts[topic_name],
+        linked_titles=_dedupe_titles(topic_to_titles.get(topic_name, [])),
+        linked_count=topic_counts[topic_name],
+    )
+
+
+def _build_graph_context(db: Session, user_id: int) -> dict:
     items = db.scalars(
         select(KnowledgeItem)
         .options(selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic))
         .where(KnowledgeItem.user_id == user_id)
         .order_by(desc(KnowledgeItem.updated_at))
-        .limit(80)
+        .limit(160)
     ).all()
     if not items:
-        return GraphResponse(nodes=[], edges=[])
+        return {
+            "items": [],
+            "topic_counts": Counter(),
+            "pair_counts": Counter(),
+            "topic_to_titles": defaultdict(list),
+            "topic_to_items": defaultdict(list),
+            "topic_names": [],
+            "topic_metadata": {},
+            "available_domains": [],
+            "topic_to_groups": {},
+        }
 
     topic_counts: Counter[str] = Counter()
     pair_counts: Counter[tuple[str, str]] = Counter()
     topic_to_titles: dict[str, list[str]] = defaultdict(list)
+    topic_to_items: dict[str, list[KnowledgeItem]] = defaultdict(list)
     recent_topic_names: list[str] = []
-    recency_weights: Counter[str] = Counter()
 
-    total_items = max(len(items), 1)
-    for index, item in enumerate(items):
+    for item in items:
         topic_names = sorted(
             {
                 content_topic.topic.name
                 for content_topic in item.content_topics
-                if content_topic.topic is not None
+                if content_topic.topic is not None and content_topic.topic.name
             }
         )
         if not topic_names:
@@ -73,91 +133,424 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
         for topic_name in topic_names:
             topic_counts[topic_name] += 1
             topic_to_titles[topic_name].append(item.title)
+            topic_to_items[topic_name].append(item)
             if topic_name not in recent_topic_names:
                 recent_topic_names.append(topic_name)
-            recency_weights[topic_name] += round(max(0.2, 1.4 - (index / total_items) * 1.1), 2)
 
         for left, right in combinations(topic_names, 2):
             pair_counts[(left, right)] += 1
 
-    top_topic_names = [topic_name for topic_name, _ in topic_counts.most_common(24)]
+    top_topic_names = [topic_name for topic_name, _ in topic_counts.most_common(MAX_TOPIC_COUNT)]
     for topic_name in recent_topic_names:
         if topic_name in top_topic_names:
             continue
         top_topic_names.append(topic_name)
-        if len(top_topic_names) >= 32:
+        if len(top_topic_names) >= MAX_TOPIC_COUNT:
             break
-    top_topic_set = set(top_topic_names)
-    if not top_topic_names:
-        return GraphResponse(nodes=[], edges=[])
 
-    edges = [
-        GraphEdge(
-            source=source,
-            target=target,
-            type="topic_link",
-            weight=float(weight),
-        )
-        for (source, target), weight in pair_counts.most_common(60)
-        if source in top_topic_set and target in top_topic_set
-    ]
+    top_topic_names = [topic_name for topic_name in top_topic_names if _topic_group(topic_name) != "Bridge"]
+    topic_metadata = sync_topic_hierarchy_metadata(db, user_id, top_topic_names)
+    topic_to_groups = {topic_name: _topic_group(topic_name) for topic_name in top_topic_names}
+    available_domains = sorted({group for group in topic_to_groups.values() if group != "Bridge"})
 
-    hierarchy_nodes, hierarchy_edges = build_hierarchy_graph(
-        Counter({topic_name: topic_counts[topic_name] for topic_name in top_topic_names}),
-        {topic_name: topic_to_titles[topic_name] for topic_name in top_topic_names},
-        _topic_group,
+    return {
+        "items": items,
+        "topic_counts": topic_counts,
+        "pair_counts": pair_counts,
+        "topic_to_titles": topic_to_titles,
+        "topic_to_items": topic_to_items,
+        "topic_names": top_topic_names,
+        "topic_metadata": topic_metadata,
+        "available_domains": available_domains,
+        "topic_to_groups": topic_to_groups,
+    }
+
+
+def _build_bridge_context(db: Session, user_id: int, context: dict) -> dict:
+    topic_names = tuple(context["topic_names"])
+    topic_signature = tuple(
+        (topic_name, len(context["topic_to_titles"].get(topic_name, [])))
+        for topic_name in topic_names
     )
+    cache_key = (user_id, topic_names, topic_signature)
+    now = monotonic()
+
+    with _BRIDGE_CACHE_LOCK:
+        cached = _BRIDGE_CACHE.get(cache_key)
+        if cached and now - cached[0] <= BRIDGE_CACHE_TTL_SECONDS:
+            return cached[1]
+
     bridge_nodes, bridge_edges = build_topic_bridges(
         db,
         user_id,
-        top_topic_names,
-        {topic_name: topic_to_titles[topic_name] for topic_name in top_topic_names},
+        list(topic_names),
+        {topic_name: context["topic_to_titles"][topic_name] for topic_name in topic_names},
         _topic_group,
     )
+    bridge_context = {
+        "bridge_nodes": bridge_nodes,
+        "bridge_edges": bridge_edges,
+        "bridge_lookup": {node.label: node for node in bridge_nodes},
+    }
 
+    with _BRIDGE_CACHE_LOCK:
+        stale_keys = [
+            key for key, value in _BRIDGE_CACHE.items()
+            if now - value[0] > BRIDGE_CACHE_TTL_SECONDS
+        ]
+        for key in stale_keys:
+            _BRIDGE_CACHE.pop(key, None)
+        _BRIDGE_CACHE[cache_key] = (now, bridge_context)
+
+    return bridge_context
+
+
+def _domain_edges(pair_counts: Counter[tuple[str, str]], topic_to_groups: dict[str, str]) -> tuple[list[GraphEdge], Counter[str]]:
+    domain_pair_counts: Counter[tuple[str, str]] = Counter()
+    for (source, target), weight in pair_counts.items():
+        source_group = topic_to_groups.get(source)
+        target_group = topic_to_groups.get(target)
+        if not source_group or not target_group or source_group == target_group:
+            continue
+        pair = tuple(sorted((source_group, target_group)))
+        domain_pair_counts[pair] += weight
+
+    edges = [
+        GraphEdge(source=source, target=target, type="domain_link", weight=float(weight))
+        for (source, target), weight in domain_pair_counts.most_common(18)
+    ]
     connection_counts: Counter[str] = Counter()
-    for edge in edges + hierarchy_edges + bridge_edges:
+    for edge in edges:
+        connection_counts[edge.source] += 1
+        connection_counts[edge.target] += 1
+    return edges, connection_counts
+
+
+def _build_level_one(context: dict) -> GraphResponse:
+    topic_counts: Counter[str] = context["topic_counts"]
+    topic_to_groups: dict[str, str] = context["topic_to_groups"]
+    available_domains: list[str] = context["available_domains"]
+    if not topic_counts or not available_domains:
+        return _empty_response(1)
+
+    domain_topic_counts: Counter[str] = Counter()
+    domain_titles: dict[str, list[str]] = defaultdict(list)
+    for topic_name, count in topic_counts.items():
+        group = topic_to_groups.get(topic_name)
+        if not group or group == "Bridge":
+            continue
+        domain_topic_counts[group] += count
+        domain_titles[group].append(topic_name)
+
+    edges, connection_counts = _domain_edges(context["pair_counts"], topic_to_groups)
+    nodes = []
+    for domain in available_domains:
+        topic_names = sorted(domain_titles.get(domain, []), key=lambda name: (-topic_counts[name], name))
+        importance = round(domain_topic_counts[domain] * 1.6 + connection_counts[domain], 2)
+        nodes.append(
+            GraphNode(
+                id=domain,
+                label=domain,
+                type="domain",
+                group=domain,
+                size=18 + min(26, importance * 1.4),
+                importance=importance,
+                connection_count=connection_counts[domain],
+                linked_titles=topic_names[:10],
+                linked_count=domain_topic_counts[domain],
+                related_titles=topic_names[:6],
+            )
+        )
+
+    return GraphResponse(nodes=nodes, edges=edges, level=1, available_domains=available_domains)
+
+
+def _build_level_two(context: dict, domain: str | None) -> GraphResponse:
+    available_domains: list[str] = context["available_domains"]
+    if not domain or domain not in available_domains:
+        return _build_level_one(context)
+
+    topic_counts: Counter[str] = context["topic_counts"]
+    topic_to_titles: dict[str, list[str]] = context["topic_to_titles"]
+    topic_metadata: dict[str, dict[str, int | str | None]] = context["topic_metadata"]
+    topic_to_groups: dict[str, str] = context["topic_to_groups"]
+
+    domain_topics = [
+        topic_name
+        for topic_name in context["topic_names"]
+        if topic_to_groups.get(topic_name) == domain and (topic_metadata.get(topic_name, {}).get("level") or 2) <= 2
+    ]
+    if not domain_topics:
+        domain_topics = [topic_name for topic_name in context["topic_names"] if topic_to_groups.get(topic_name) == domain]
+    if not domain_topics:
+        return GraphResponse(nodes=[], edges=[], level=2, domain=domain, available_domains=available_domains)
+
+    selected_topics = set(domain_topics)
+    edges = [
+        GraphEdge(source=source, target=target, type="topic_link", weight=float(weight))
+        for (source, target), weight in context["pair_counts"].most_common(40)
+        if source in selected_topics and target in selected_topics
+    ]
+    connection_counts: Counter[str] = Counter()
+    for edge in edges:
         connection_counts[edge.source] += 1
         connection_counts[edge.target] += 1
 
     nodes = [
-        GraphNode(
-            id=topic_name,
-            label=topic_name,
-            type="topic",
-            group=_topic_group(topic_name),
-            size=0,
-            importance=round(topic_counts[topic_name] * 2 + connection_counts[topic_name] + recency_weights[topic_name], 2),
-            connection_count=connection_counts[topic_name],
-            linked_titles=topic_to_titles[topic_name][:12],
-            linked_count=topic_counts[topic_name],
-        )
-        for topic_name in top_topic_names
+        _topic_node(topic_name, topic_counts, connection_counts, topic_to_titles, base_scale=0.95, max_size=14)
+        for topic_name in sorted(domain_topics, key=lambda name: (-topic_counts[name], name))
+    ]
+    return GraphResponse(nodes=nodes, edges=edges, level=2, domain=domain, available_domains=available_domains)
+
+
+def _build_level_three(context: dict, bridge_context: dict, domain: str | None, topic: str | None) -> GraphResponse:
+    available_domains: list[str] = context["available_domains"]
+    if not topic or topic not in context["topic_counts"]:
+        return _build_level_two(context, domain)
+
+    topic_counts: Counter[str] = context["topic_counts"]
+    topic_to_titles: dict[str, list[str]] = context["topic_to_titles"]
+    topic_metadata: dict[str, dict[str, int | str | None]] = context["topic_metadata"]
+    topic_to_groups: dict[str, str] = context["topic_to_groups"]
+
+    resolved_domain = domain or topic_to_groups.get(topic)
+    neighbor_topics: set[str] = {topic}
+    for (source, target), weight in context["pair_counts"].most_common(120):
+        if weight < 1:
+            continue
+        if source == topic:
+            neighbor_topics.add(target)
+        elif target == topic:
+            neighbor_topics.add(source)
+        if len(neighbor_topics) >= 9:
+            break
+
+    parent_name = topic_metadata.get(topic, {}).get("parent_name")
+    if isinstance(parent_name, str):
+        neighbor_topics.add(parent_name)
+    child_parent_map = infer_topic_hierarchy(context["topic_names"])
+    for child_name, child_parent_name in child_parent_map.items():
+        if child_parent_name == topic:
+            neighbor_topics.add(child_name)
+
+    bridge_nodes = []
+    bridge_edges = []
+    for node in bridge_context["bridge_nodes"]:
+        related = set(node.related_titles or [])
+        if topic in related:
+            bridge_nodes.append(node)
+    bridge_node_ids = {node.id for node in bridge_nodes}
+    for edge in bridge_context["bridge_edges"]:
+        source_id = edge.source
+        target_id = edge.target
+        if source_id in bridge_node_ids or target_id in bridge_node_ids:
+            bridge_edges.append(edge)
+            if source_id != topic and source_id not in bridge_node_ids:
+                neighbor_topics.add(source_id)
+            if target_id != topic and target_id not in bridge_node_ids:
+                neighbor_topics.add(target_id)
+
+    selected_topics = {name for name in neighbor_topics if name in topic_counts}
+    edges = []
+    for (source, target), weight in context["pair_counts"].most_common(80):
+        if source in selected_topics and target in selected_topics:
+            edges.append(GraphEdge(source=source, target=target, type="topic_link", weight=float(weight)))
+
+    child_counts: Counter[str] = Counter()
+    for edge in edges + bridge_edges:
+        child_counts[edge.source] += 1
+        child_counts[edge.target] += 1
+
+    for child_name, child_parent_name in child_parent_map.items():
+        if child_name in selected_topics and child_parent_name in selected_topics:
+            edges.append(
+                GraphEdge(
+                    source=child_parent_name,
+                    target=child_name,
+                    type="topic_parent_relationship",
+                    weight=1.4,
+                )
+            )
+            child_counts[child_parent_name] += 1
+            child_counts[child_name] += 1
+
+    edges.extend(bridge_edges)
+    nodes = [
+        _topic_node(topic_name, topic_counts, child_counts, topic_to_titles, base_scale=1.05, max_size=16)
+        for topic_name in sorted(selected_topics, key=lambda name: (name != topic, -topic_counts[name], name))
     ]
 
-    existing_node_ids = {node.id for node in nodes}
-    for node in hierarchy_nodes:
-        if node.id not in existing_node_ids:
-            hierarchy_importance = round(
-                node.linked_count * 2 + connection_counts[node.id] + max(0.5, node.linked_count * 0.2),
-                2,
-            )
-            node.importance = hierarchy_importance
-            node.connection_count = connection_counts[node.id]
-            node.size = 0
-            nodes.append(node)
-            existing_node_ids.add(node.id)
     for node in bridge_nodes:
-        if node.id not in existing_node_ids:
-            node.importance = round(node.importance + connection_counts[node.id], 2)
-            node.connection_count = connection_counts[node.id]
-            node.size = 0
-            nodes.append(node)
-            existing_node_ids.add(node.id)
-    edges.extend(hierarchy_edges)
-    edges.extend(bridge_edges)
+        connection_count = child_counts[node.id]
+        nodes.append(
+            GraphNode(
+                **{
+                    **node.model_dump(),
+                    "size": 5 + min(24, (node.importance + connection_count) * 1.8),
+                    "importance": round(node.importance + connection_count, 2),
+                    "connection_count": connection_count,
+                }
+            )
+        )
 
-    for node in nodes:
-        node.size = 4 + min(28, node.importance * 2)
+    return GraphResponse(nodes=nodes, edges=edges, level=3, domain=resolved_domain, topic=topic, available_domains=available_domains)
 
-    return GraphResponse(nodes=nodes, edges=edges)
+
+def _build_level_four(context: dict, bridge_context: dict | None, domain: str | None, topic: str | None) -> GraphResponse:
+    available_domains: list[str] = context["available_domains"]
+    if not topic:
+        return _build_level_two(context, domain)
+
+    resolved_domain = domain or context["topic_to_groups"].get(topic)
+    topic_to_items: dict[str, list[KnowledgeItem]] = context["topic_to_items"]
+    topic_to_titles: dict[str, list[str]] = context["topic_to_titles"]
+    topic_counts: Counter[str] = context["topic_counts"]
+    bridge_lookup: dict[str, GraphNode] = (bridge_context or {}).get("bridge_lookup", {})
+
+    root_node: GraphNode | None = None
+    root_edges: list[GraphEdge] = []
+    candidate_items: list[KnowledgeItem] = []
+
+    if topic in topic_counts:
+        root_node = GraphNode(
+            id=topic,
+            label=topic,
+            type="topic",
+            group=context["topic_to_groups"].get(topic, "General"),
+            size=18,
+            importance=10,
+            connection_count=0,
+            linked_titles=_dedupe_titles(topic_to_titles.get(topic, [])),
+            linked_count=topic_counts[topic],
+        )
+        candidate_items = topic_to_items.get(topic, [])[:MAX_ITEM_COUNT]
+    elif topic in bridge_lookup:
+        bridge_node = bridge_lookup[topic]
+        root_node = GraphNode(
+            **{
+                **bridge_node.model_dump(),
+                "size": 18,
+                "importance": max(bridge_node.importance, 10),
+            }
+        )
+        related_topics = [name for name in bridge_node.related_titles if name in topic_to_items]
+        seen_ids: set[int] = set()
+        for related_topic in related_topics:
+            for item in topic_to_items.get(related_topic, []):
+                if item.id in seen_ids:
+                    continue
+                seen_ids.add(item.id)
+                candidate_items.append(item)
+                if len(candidate_items) >= MAX_ITEM_COUNT:
+                    break
+            if len(candidate_items) >= MAX_ITEM_COUNT:
+                break
+    else:
+        if bridge_context is None:
+            return _build_level_two(context, resolved_domain)
+        return _build_level_three(context, bridge_context, resolved_domain, topic)
+
+    item_nodes: list[GraphNode] = []
+    for item in candidate_items[:MAX_ITEM_COUNT]:
+        topics = sorted(
+            {
+                content_topic.topic.name
+                for content_topic in item.content_topics
+                if content_topic.topic is not None and content_topic.topic.name
+            }
+        )
+        item_nodes.append(
+            GraphNode(
+                id=f"knowledge-{item.id}",
+                label=item.title,
+                type="knowledge",
+                group=resolved_domain or root_node.group,
+                size=8,
+                importance=4,
+                connection_count=1,
+                summary=(item.summary or item.content[:180]).strip() if item.content else item.summary,
+                content_type=item.type,
+                tags=[tag.strip() for tag in (item.tags or "").split(",") if tag.strip()],
+                topics=topics,
+                linked_titles=topics[:8],
+                linked_count=len(topics),
+            )
+        )
+        root_edges.append(
+            GraphEdge(
+                source=root_node.id,
+                target=f"knowledge-{item.id}",
+                type="knowledge_item_link",
+                weight=1.2,
+            )
+        )
+
+    if root_node is None:
+        return GraphResponse(nodes=[], edges=[], level=4, domain=resolved_domain, topic=topic, available_domains=available_domains)
+
+    root_node.connection_count = len(root_edges)
+    root_node.size = 12 + min(18, max(root_node.importance, len(root_edges)) * 1.3)
+    return GraphResponse(
+        nodes=[root_node, *item_nodes],
+        edges=root_edges,
+        level=4,
+        domain=resolved_domain,
+        topic=topic,
+        available_domains=available_domains,
+    )
+
+
+def build_brain_map_for_user(db: Session, user_id: int, level: int = 1, domain: str | None = None, topic: str | None = None) -> GraphResponse:
+    request_started = monotonic()
+    context_started = monotonic()
+    context = _build_graph_context(db, user_id)
+    context_elapsed_ms = round((monotonic() - context_started) * 1000, 1)
+
+    if not context["items"]:
+        logger.info(
+            "brain_map level=%s domain=%s topic=%s context_ms=%s total_ms=%s empty=1",
+            level,
+            domain,
+            topic,
+            context_elapsed_ms,
+            round((monotonic() - request_started) * 1000, 1),
+        )
+        return _empty_response(level, domain, topic)
+
+    bridge_elapsed_ms = 0.0
+    builder_started = monotonic()
+
+    if level <= 1:
+        response = _build_level_one(context)
+    elif level == 2:
+        response = _build_level_two(context, domain)
+    elif level == 3:
+        bridge_started = monotonic()
+        bridge_context = _build_bridge_context(db, user_id, context)
+        bridge_elapsed_ms = round((monotonic() - bridge_started) * 1000, 1)
+        builder_started = monotonic()
+        response = _build_level_three(context, bridge_context, domain, topic)
+    else:
+        bridge_context = None
+        if topic and topic not in context["topic_counts"]:
+            bridge_started = monotonic()
+            bridge_context = _build_bridge_context(db, user_id, context)
+            bridge_elapsed_ms = round((monotonic() - bridge_started) * 1000, 1)
+        builder_started = monotonic()
+        response = _build_level_four(context, bridge_context, domain, topic)
+
+    builder_elapsed_ms = round((monotonic() - builder_started) * 1000, 1)
+    total_elapsed_ms = round((monotonic() - request_started) * 1000, 1)
+    logger.info(
+        "brain_map level=%s domain=%s topic=%s context_ms=%s bridge_ms=%s build_ms=%s total_ms=%s nodes=%s edges=%s",
+        level,
+        domain,
+        topic,
+        context_elapsed_ms,
+        bridge_elapsed_ms,
+        builder_elapsed_ms,
+        total_elapsed_ms,
+        len(response.nodes),
+        len(response.edges),
+    )
+    return response

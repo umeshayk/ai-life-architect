@@ -164,23 +164,37 @@ def _persist_bridge_topics(db: Session, user_id: int, bridge_names: list[str]) -
         select(Topic).where(Topic.user_id == user_id, Topic.type == "bridge")
     ).all()
     existing_by_name = {topic.name: topic for topic in existing_bridges}
+    existing_names = set(existing_by_name)
+    target_names = set(bridge_names)
+    changed = False
 
     for topic in existing_bridges:
-        if topic.name not in bridge_names:
+        if topic.name not in target_names:
             db.execute(delete(Topic).where(Topic.id == topic.id))
+            changed = True
 
     persisted: dict[str, Topic] = {}
     for bridge_name in bridge_names:
         topic = existing_by_name.get(bridge_name)
         if topic is None:
-            topic = Topic(user_id=user_id, name=bridge_name, type="bridge")
+            topic = Topic(user_id=user_id, name=bridge_name, type="bridge", level=3)
             db.add(topic)
             db.flush()
+            changed = True
         elif topic.type != "bridge":
             continue
+        else:
+            if topic.level != 3:
+                topic.level = 3
+                changed = True
+            if topic.parent_topic_id is not None:
+                topic.parent_topic_id = None
+                changed = True
         persisted[bridge_name] = topic
 
-    db.commit()
+    if changed or existing_names != target_names:
+        db.commit()
+
     return persisted
 
 
@@ -197,6 +211,8 @@ def build_topic_bridges(
     grouped_topics: dict[str, list[str]] = defaultdict(list)
     for topic_name in topic_names:
         group = topic_group_getter(topic_name)
+        if group == "Bridge":
+            continue
         grouped_topics[group].append(topic_name)
 
     if len(grouped_topics) < 2:

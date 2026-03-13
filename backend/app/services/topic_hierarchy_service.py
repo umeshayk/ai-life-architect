@@ -1,5 +1,9 @@
 from collections import Counter, defaultdict
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.topic import Topic
 from app.schemas.graph import GraphEdge, GraphNode
 
 
@@ -65,6 +69,50 @@ def infer_topic_hierarchy(topic_names: list[str]) -> dict[str, str]:
             parent_map[topic_name] = REAL_ESTATE_PARENT
 
     return parent_map
+
+
+def sync_topic_hierarchy_metadata(db: Session, user_id: int, topic_names: list[str]) -> dict[str, dict[str, int | str | None]]:
+    if not topic_names:
+        return {}
+
+    topics = db.scalars(
+        select(Topic).where(Topic.user_id == user_id, Topic.name.in_(topic_names))
+    ).all()
+    topics_by_name = {topic.name: topic for topic in topics}
+    parent_name_map = infer_topic_hierarchy(topic_names)
+    metadata: dict[str, dict[str, int | str | None]] = {}
+    changed = False
+
+    for topic in topics:
+        if topic.type == "bridge":
+            desired_parent_id = None
+            desired_level = 3
+            parent_name = None
+        else:
+            parent_name = parent_name_map.get(topic.name)
+            parent_topic = topics_by_name.get(parent_name) if parent_name else None
+            desired_parent_id = parent_topic.id if parent_topic and parent_topic.id != topic.id else None
+            desired_level = 3 if desired_parent_id is not None else 2
+
+        if topic.parent_topic_id != desired_parent_id:
+            topic.parent_topic_id = desired_parent_id
+            changed = True
+        if topic.level != desired_level:
+            topic.level = desired_level
+            changed = True
+
+        metadata[topic.name] = {
+            "id": topic.id,
+            "parent_name": parent_name,
+            "parent_topic_id": desired_parent_id,
+            "level": desired_level,
+            "type": topic.type,
+        }
+
+    if changed:
+        db.commit()
+
+    return metadata
 
 
 def build_hierarchy_graph(

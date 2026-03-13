@@ -30,6 +30,8 @@ def startup() -> None:
         connection.execute(
             text("ALTER TABLE IF EXISTS topics ADD COLUMN IF NOT EXISTS type VARCHAR(30) NOT NULL DEFAULT 'standard'")
         )
+        connection.execute(text("ALTER TABLE IF EXISTS topics ADD COLUMN IF NOT EXISTS parent_topic_id INTEGER"))
+        connection.execute(text("ALTER TABLE IF EXISTS topics ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 2"))
     Base.metadata.create_all(bind=engine)
 
 

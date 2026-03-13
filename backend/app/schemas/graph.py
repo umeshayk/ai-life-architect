@@ -28,3 +28,7 @@ class GraphEdge(BaseModel):
 class GraphResponse(BaseModel):
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+    level: int = 1
+    domain: str | None = None
+    topic: str | None = None
+    available_domains: list[str] = Field(default_factory=list)

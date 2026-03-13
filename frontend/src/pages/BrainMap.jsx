@@ -47,19 +47,6 @@ function graphColor(group, importance = 0, dimmed = false) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function clusterDisplayLabel(group, leader) {
-  if (group === "Bridge") {
-    return "BRIDGES";
-  }
-  if (group === "Business" && leader?.label && /property|real estate/i.test(leader.label)) {
-    return "REAL ESTATE";
-  }
-  if (group === "Math" || group === "Mathematics") {
-    return "MATHEMATICS";
-  }
-  return String(group || "General").toUpperCase();
-}
-
 function createClusterAnchors(groups, width, height) {
   const sortedGroups = [...groups].sort();
   return new Map(
@@ -77,13 +64,14 @@ function createClusterAnchors(groups, width, height) {
   );
 }
 
-function createClusterForce(axis, anchorMap, width, height) {
+function createClusterForce(axis, anchorMap, width, height, groupAccessor) {
   let nodes = [];
 
   const force = (alpha) => {
     const strength = 0.3 * alpha;
     nodes.forEach((node) => {
-      const anchor = anchorMap.get(node.group) || { x: width / 2, y: height / 2 };
+      const group = groupAccessor(node);
+      const anchor = anchorMap.get(group) || { x: width / 2, y: height / 2 };
       if (axis === "x") {
         node.vx += (anchor.x - node.x) * strength;
       } else {
@@ -124,12 +112,125 @@ function createLeaderForce(axis, leaderMap) {
   return force;
 }
 
-function nodeRadius(node) {
+function polarPoint(centerX, centerY, radius, angle) {
+  return {
+    x: centerX + radius * Math.cos(angle),
+    y: centerY + radius * Math.sin(angle)
+  };
+}
+
+function applyLevelLayout(nodes, width, height, level, activeTopic) {
+  const cloned = nodes.map((node) => ({ ...node }));
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  if (level === 2) {
+    const sorted = [...cloned].sort((a, b) => (b.importance || 0) - (a.importance || 0));
+    const innerCount = Math.min(6, sorted.length);
+    const innerRadius = Math.min(width, height) * 0.18;
+    const outerRadius = Math.min(width, height) * 0.31;
+    sorted.forEach((node, index) => {
+      const isInner = index < innerCount;
+      const ringIndex = isInner ? index : index - innerCount;
+      const ringSize = isInner ? innerCount : Math.max(1, sorted.length - innerCount);
+      const angle = (-Math.PI / 2) + ((2 * Math.PI * ringIndex) / ringSize);
+      const point = polarPoint(centerX, centerY, isInner ? innerRadius : outerRadius, angle);
+      node.x = point.x;
+      node.y = point.y;
+      node.fx = point.x;
+      node.fy = point.y;
+    });
+    return cloned;
+  }
+
+  if (level === 3) {
+    const focusNode = cloned.find((node) => node.label === activeTopic) || cloned[0];
+    const bridgeNodes = cloned.filter((node) => node.type === "bridge");
+    const topicNodes = cloned.filter((node) => node.id !== focusNode?.id && node.type !== "bridge");
+    if (focusNode) {
+      focusNode.x = centerX;
+      focusNode.y = centerY;
+      focusNode.fx = centerX;
+      focusNode.fy = centerY;
+    }
+    bridgeNodes.forEach((node, index) => {
+      const angle = (-Math.PI / 2) + ((2 * Math.PI * index) / Math.max(1, bridgeNodes.length));
+      const point = polarPoint(centerX, centerY, Math.min(width, height) * 0.18, angle);
+      node.x = point.x;
+      node.y = point.y;
+      node.fx = point.x;
+      node.fy = point.y;
+    });
+    topicNodes.forEach((node, index) => {
+      const angle = (-Math.PI / 2) + ((2 * Math.PI * index) / Math.max(1, topicNodes.length));
+      const point = polarPoint(centerX, centerY, Math.min(width, height) * 0.32, angle);
+      node.x = point.x;
+      node.y = point.y;
+      node.fx = point.x;
+      node.fy = point.y;
+    });
+    return cloned;
+  }
+
+  if (level >= 4) {
+    const rootNode = cloned.find((node) => node.label === activeTopic || node.type === "topic" || node.type === "bridge") || cloned[0];
+    const knowledgeNodes = cloned.filter((node) => node.id !== rootNode?.id);
+    if (rootNode) {
+      rootNode.x = centerX;
+      rootNode.y = centerY - 20;
+      rootNode.fx = rootNode.x;
+      rootNode.fy = rootNode.y;
+    }
+    knowledgeNodes.forEach((node, index) => {
+      const angle = (-Math.PI / 2) + ((2 * Math.PI * index) / Math.max(1, knowledgeNodes.length));
+      const point = polarPoint(centerX, centerY + 10, Math.min(width, height) * 0.28, angle);
+      node.x = point.x;
+      node.y = point.y;
+      node.fx = point.x;
+      node.fy = point.y;
+    });
+    return cloned;
+  }
+
+  return cloned;
+}
+
+function nodeRadius(node, level = 1, activeTopic = "") {
+  if (node.type === "knowledge") {
+    return level >= 4 ? 6 : 7;
+  }
+  if (level >= 4) {
+    return node.label === activeTopic ? 14 : 6;
+  }
+  if (level === 3) {
+    if (node.type === "bridge") {
+      return 8;
+    }
+    if (node.label === activeTopic) {
+      return 13;
+    }
+  }
+  if (typeof node.size === "number" && node.size > 0) {
+    return Math.max(4, Math.min(level >= 3 ? 18 : 22, node.size));
+  }
   const importance = node.importance || 0;
   if (importance < 1) {
     return 2;
   }
-  return Math.min(34, 4 + importance * 2);
+  return Math.min(level >= 3 ? 16 : 20, 4 + importance * (level >= 3 ? 0.9 : 1.2));
+}
+
+function levelSummary(level, domain, topic) {
+  if (level === 1) {
+    return "Level 1: domain clusters";
+  }
+  if (level === 2) {
+    return `Level 2: topics in ${domain || "this domain"}`;
+  }
+  if (level === 3) {
+    return `Level 3: related topics around ${topic || "this topic"}`;
+  }
+  return `Level 4: saved knowledge items for ${topic || "this topic"}`;
 }
 
 export default function BrainMap() {
@@ -138,7 +239,11 @@ export default function BrainMap() {
   const shellRef = useRef(null);
   const didAutoFitRef = useRef(false);
   const lastSearchFocusRef = useRef("");
-  const [graph, setGraph] = useState({ nodes: [], edges: [] });
+  const [graph, setGraph] = useState({ nodes: [], edges: [], level: 1, domain: null, topic: null, available_domains: [] });
+  const [currentLevel, setCurrentLevel] = useState(1);
+  const [currentDomain, setCurrentDomain] = useState("");
+  const [currentTopic, setCurrentTopic] = useState("");
+  const [historyStack, setHistoryStack] = useState([]);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [search, setSearch] = useState("");
@@ -146,11 +251,24 @@ export default function BrainMap() {
   const [graphSize, setGraphSize] = useState({ width: 1200, height: 920 });
 
   useEffect(() => {
+    const params = { level: currentLevel };
+    if (currentDomain) {
+      params.domain = currentDomain;
+    }
+    if (currentTopic) {
+      params.topic = currentTopic;
+    }
+
+    setError("");
+    setSelectedNodeId(null);
     api
-      .get("/api/graph")
-      .then((response) => setGraph(response.data))
+      .get("/api/brain-map", { params })
+      .then((response) => {
+        setGraph(response.data);
+        didAutoFitRef.current = false;
+      })
       .catch((err) => setError(err.response?.data?.detail || "Unable to load the brain map."));
-  }, []);
+  }, [currentLevel, currentDomain, currentTopic]);
 
   useEffect(() => {
     const updateSize = () => {
@@ -183,10 +301,10 @@ export default function BrainMap() {
 
   const filteredData = useMemo(
     () => ({
-      nodes: graphWithDegree.nodes.map((node) => ({ ...node })),
+      nodes: applyLevelLayout(graphWithDegree.nodes, graphSize.width, graphSize.height, currentLevel, currentTopic),
       links: graphWithDegree.edges.map((edge) => ({ ...edge }))
     }),
-    [graphWithDegree]
+    [currentLevel, currentTopic, graphSize, graphWithDegree]
   );
 
   const searchMatches = useMemo(() => {
@@ -209,7 +327,7 @@ export default function BrainMap() {
   }, [graphWithDegree.nodes, search]);
 
   const selectedNode = graphWithDegree.nodes.find((node) => node.id === selectedNodeId) || null;
-  const selectedGroup = selectedNode?.group || null;
+  const selectedGroup = selectedNode?.group || graph.domain || null;
   const availableGroups = useMemo(() => {
     const groups = new Set(filteredData.nodes.map((node) => node.group));
     return Object.entries(GROUP_COLORS).map(([group, color]) => ({
@@ -219,62 +337,58 @@ export default function BrainMap() {
     }));
   }, [filteredData.nodes]);
   const clusterAnchors = useMemo(
-    () => createClusterAnchors(new Set(filteredData.nodes.map((node) => node.group)), graphSize.width, graphSize.height),
+    () => createClusterAnchors(new Set(filteredData.nodes.map((node) => node.type === "domain" ? node.label : node.group)), graphSize.width, graphSize.height),
     [filteredData.nodes, graphSize]
   );
   const groupLeaders = useMemo(() => {
     const leaders = new Map();
     filteredData.nodes.forEach((node) => {
-      const existing = leaders.get(node.group);
+      const leaderKey = node.type === "domain" ? node.label : node.group;
+      const existing = leaders.get(leaderKey);
       if (!existing || (node.importance || 0) > (existing.importance || 0)) {
-        leaders.set(node.group, node);
+        leaders.set(leaderKey, node);
       }
     });
     return leaders;
   }, [filteredData.nodes]);
+
   const focusContext = useMemo(() => {
     if (!selectedNodeId) {
-      return { neighborIds: new Set(), connectedEdges: new Set(), connectedLabels: [] };
+      return { neighborIds: new Set(), connectedLabels: [] };
     }
 
     const neighborIds = new Set([selectedNodeId]);
-    const connectedEdges = new Set();
     const connectedLabelSet = new Set();
 
     filteredData.links.forEach((edge) => {
       const sourceId = typeof edge.source === "object" ? edge.source.id : edge.source;
       const targetId = typeof edge.target === "object" ? edge.target.id : edge.target;
-      const edgeKey = `${sourceId}->${targetId}`;
       if (sourceId === selectedNodeId) {
         neighborIds.add(targetId);
-        connectedEdges.add(edgeKey);
         connectedLabelSet.add(targetId);
       } else if (targetId === selectedNodeId) {
         neighborIds.add(sourceId);
-        connectedEdges.add(edgeKey);
         connectedLabelSet.add(sourceId);
       }
     });
 
-    return { neighborIds, connectedEdges, connectedLabels: Array.from(connectedLabelSet) };
+    return { neighborIds, connectedLabels: Array.from(connectedLabelSet) };
   }, [filteredData, selectedNodeId]);
+
   const clusterLabels = useMemo(
-    () =>
-      availableGroups
-        .filter(({ hasNodes }) => hasNodes)
-        .map(({ group, color }) => {
-          const anchor = clusterAnchors.get(group) || { x: graphSize.width / 2, y: graphSize.height / 2 };
-          const leader = groupLeaders.get(group) || null;
-          return {
-            group,
-            color,
-            label: clusterDisplayLabel(group, leader),
-            x: anchor.x,
-            y: Math.max(36, anchor.y - 74),
-            leader
-          };
-        }),
-    [availableGroups, clusterAnchors, graphSize, groupLeaders]
+    () => filteredData.nodes
+      .filter((node) => node.type === "domain")
+      .map((node) => {
+        const anchor = clusterAnchors.get(node.label) || { x: graphSize.width / 2, y: graphSize.height / 2 };
+        return {
+          group: node.label,
+          color: GROUP_COLORS[node.label] || GROUP_COLORS.General,
+          label: String(node.label || "General").toUpperCase(),
+          x: anchor.x,
+          y: Math.max(36, anchor.y - 74)
+        };
+      }),
+    [clusterAnchors, filteredData.nodes, graphSize]
   );
 
   useEffect(() => {
@@ -283,25 +397,66 @@ export default function BrainMap() {
     }
 
     const graphApi = fgRef.current;
+    const groupAccessor = (node) => (node.type === "domain" ? node.label : node.group);
     didAutoFitRef.current = false;
-    graphApi.d3Force("charge").strength(-900);
-    graphApi.d3Force("link").distance((link) => Math.max(180, graphSize.width / 6) + (link.weight || 1) * 20);
-    graphApi.d3Force("center").strength(0.3);
-    graphApi.d3Force("cluster-x", createClusterForce("x", clusterAnchors, graphSize.width, graphSize.height));
-    graphApi.d3Force("cluster-y", createClusterForce("y", clusterAnchors, graphSize.width, graphSize.height));
-    graphApi.d3Force("leader-x", createLeaderForce("x", groupLeaders));
-    graphApi.d3Force("leader-y", createLeaderForce("y", groupLeaders));
+    graphApi.d3Force("charge").strength(currentLevel >= 2 ? 0 : -900);
+    graphApi.d3Force("link").distance((link) => {
+      if (currentLevel >= 4) {
+        return 150;
+      }
+      if (currentLevel === 3) {
+        return 170 + (link.weight || 1) * 12;
+      }
+      return Math.max(160, graphSize.width / 6) + (link.weight || 1) * 18;
+    });
+    graphApi.d3Force("center").strength(currentLevel >= 2 ? 0.05 : 0.3);
+    graphApi.d3Force("cluster-x", currentLevel === 1 ? createClusterForce("x", clusterAnchors, graphSize.width, graphSize.height, groupAccessor) : null);
+    graphApi.d3Force("cluster-y", currentLevel === 1 ? createClusterForce("y", clusterAnchors, graphSize.width, graphSize.height, groupAccessor) : null);
+    graphApi.d3Force("leader-x", currentLevel === 1 ? createLeaderForce("x", groupLeaders) : null);
+    graphApi.d3Force("leader-y", currentLevel === 1 ? createLeaderForce("y", groupLeaders) : null);
     graphApi.d3Force("collision", null);
     graphApi.d3ReheatSimulation();
-  }, [filteredData, graphSize, clusterAnchors, groupLeaders]);
+  }, [clusterAnchors, currentLevel, filteredData, graphSize, groupLeaders]);
 
   const focusNode = (nodeId) => {
     setSelectedNodeId(nodeId);
     const targetNode = filteredData.nodes.find((node) => node.id === nodeId);
     if (targetNode && fgRef.current) {
       fgRef.current.centerAt(targetNode.x, targetNode.y, 500);
-      fgRef.current.zoom(2.1, 500);
+      fgRef.current.zoom(currentLevel >= 4 ? 2.5 : 2.1, 500);
     }
+  };
+
+  const openContext = ({ level, domain = "", topic = "" }) => {
+    setHistoryStack((prev) => [...prev, { level: currentLevel, domain: currentDomain, topic: currentTopic }]);
+    setCurrentLevel(level);
+    setCurrentDomain(domain);
+    setCurrentTopic(topic);
+    setSelectedNodeId(null);
+    lastSearchFocusRef.current = "";
+  };
+
+  const handleNodeAction = (node) => {
+    if (!node) {
+      return;
+    }
+
+    if (currentLevel === 1 && node.type === "domain") {
+      openContext({ level: 2, domain: node.label });
+      return;
+    }
+
+    if (currentLevel === 2 && node.type === "topic") {
+      openContext({ level: 3, domain: currentDomain || node.group, topic: node.label });
+      return;
+    }
+
+    if (currentLevel === 3 && (node.type === "topic" || node.type === "bridge")) {
+      openContext({ level: 4, domain: currentDomain || node.group, topic: node.label });
+      return;
+    }
+
+    focusNode(node.id);
   };
 
   const handleSearchSubmit = (event) => {
@@ -309,7 +464,7 @@ export default function BrainMap() {
     if (!searchMatches.length) {
       return;
     }
-    focusNode(searchMatches[0].id);
+    handleNodeAction(searchMatches[0]);
   };
 
   useEffect(() => {
@@ -332,29 +487,60 @@ export default function BrainMap() {
   }, [search, searchMatches]);
 
   const focusGroup = (group) => {
-    const candidate = [...filteredData.nodes]
-      .filter((node) => node.group === group)
-      .sort((left, right) => (right.importance || 0) - (left.importance || 0))[0];
-    if (!candidate) {
+    if (currentLevel === 1) {
+      openContext({ level: 2, domain: group });
       return;
     }
-    focusNode(candidate.id);
+    if (group !== "Bridge" && group !== (currentDomain || group) && graph.available_domains?.includes(group)) {
+      openContext({ level: 2, domain: group });
+      return;
+    }
+    const candidate = [...filteredData.nodes]
+      .filter((node) => node.group === group || node.label === group)
+      .sort((left, right) => (right.importance || 0) - (left.importance || 0))[0];
+    if (candidate) {
+      focusNode(candidate.id);
+    }
+  };
+
+  const handleBack = () => {
+    const previous = historyStack[historyStack.length - 1];
+    if (!previous) {
+      return;
+    }
+    setHistoryStack((prev) => prev.slice(0, -1));
+    setCurrentLevel(previous.level);
+    setCurrentDomain(previous.domain);
+    setCurrentTopic(previous.topic);
+    setSelectedNodeId(null);
+    lastSearchFocusRef.current = "";
   };
 
   const handleReset = () => {
+    setHistoryStack([]);
+    setCurrentLevel(1);
+    setCurrentDomain("");
+    setCurrentTopic("");
+    setSelectedNodeId(null);
+    setSearch("");
+    lastSearchFocusRef.current = "";
     if (fgRef.current && filteredData.nodes.length) {
-      setSelectedNodeId(null);
-      setSearch("");
-      lastSearchFocusRef.current = "";
       fgRef.current.zoomToFit(600, 40);
     }
+  };
+
+  const openRelatedTopic = (label) => {
+    if (!label) {
+      return;
+    }
+    openContext({ level: 3, domain: currentDomain || selectedNode?.group || "", topic: label });
   };
 
   return (
     <div className="stack">
       <section className="card">
         <h2>Brain Map</h2>
-        <p className="muted">Explore how your saved knowledge topics connect.</p>
+        <p className="muted">Explore how your saved knowledge expands from domains into topics, relationships, bridges, and notes.</p>
       </section>
 
       <section className="card">
@@ -363,13 +549,17 @@ export default function BrainMap() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search and focus a topic"
+              placeholder={currentLevel >= 4 ? "Search items in this view" : "Search and focus this view"}
             />
           </form>
+          <button type="button" className="secondary-button" onClick={handleBack} disabled={!historyStack.length}>
+            Back
+          </button>
           <button type="button" className="secondary-button" onClick={handleReset}>
             Reset View
           </button>
         </div>
+        <p className="muted">{levelSummary(graph.level || currentLevel, graph.domain || currentDomain, graph.topic || currentTopic)}</p>
         {!!searchMatches.length && (
           <div className="brain-map-search-results">
             {searchMatches.map((match) => (
@@ -377,7 +567,7 @@ export default function BrainMap() {
                 key={match.id}
                 type="button"
                 className="brain-map-search-result"
-                onClick={() => focusNode(match.id)}
+                onClick={() => handleNodeAction(match)}
               >
                 <span>{match.label}</span>
                 <span className="muted">{match.group}</span>
@@ -406,36 +596,35 @@ export default function BrainMap() {
           <p className="muted">No graph data available yet. Add more topic-linked knowledge first.</p>
         ) : (
           <div ref={shellRef} className="brain-map-canvas force-graph-shell">
-            <div className="brain-map-overlay">
-              {clusterLabels.map((cluster) => (
-                <button
-                  key={cluster.group}
-                  type="button"
-                  className={`brain-map-cluster-label ${selectedGroup === cluster.group ? "active" : ""}`}
-                  style={{
-                    left: `${cluster.x}px`,
-                    top: `${cluster.y}px`,
-                    borderColor: cluster.color,
-                    color: cluster.color
-                  }}
-                  onClick={() => focusGroup(cluster.group)}
-                  title={cluster.leader ? `Focus ${cluster.label} around ${cluster.leader.label}` : `Focus ${cluster.label}`}
-                >
-                  <span
-                    className="brain-map-cluster-dot"
-                    style={{ backgroundColor: cluster.color }}
-                  />
-                  {cluster.label}
-                </button>
-              ))}
-            </div>
+            {graph.level === 1 && (
+              <div className="brain-map-overlay">
+                {clusterLabels.map((cluster) => (
+                  <button
+                    key={cluster.group}
+                    type="button"
+                    className={`brain-map-cluster-label ${selectedGroup === cluster.group ? "active" : ""}`}
+                    style={{
+                      left: `${cluster.x}px`,
+                      top: `${cluster.y}px`,
+                      borderColor: cluster.color,
+                      color: cluster.color
+                    }}
+                    onClick={() => openContext({ level: 2, domain: cluster.group })}
+                    title={`Open ${cluster.group}`}
+                  >
+                    <span className="brain-map-cluster-dot" style={{ backgroundColor: cluster.color }} />
+                    {cluster.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <ForceGraph2D
               ref={fgRef}
               width={graphSize.width}
               height={graphSize.height}
               graphData={filteredData}
               nodeRelSize={6}
-              nodeVal={(node) => nodeRadius(node)}
+              nodeVal={(node) => nodeRadius(node, currentLevel, currentTopic)}
               cooldownTicks={160}
               onEngineStop={() => {
                 if (!didAutoFitRef.current && fgRef.current) {
@@ -474,15 +663,24 @@ export default function BrainMap() {
               }}
               enableNodeDrag={true}
               onNodeHover={(node) => setHoveredNodeId(node?.id || null)}
-              onNodeClick={(node) => focusNode(node.id)}
+              onNodeClick={handleNodeAction}
               nodeCanvasObject={(node, ctx, globalScale) => {
                 const label = node.label;
                 const fontSize = Math.max(11, 15 / globalScale);
-                const radius = nodeRadius(node);
+                const radius = nodeRadius(node, currentLevel, currentTopic);
                 const isSelected = selectedNodeId === node.id;
                 const isNeighbor = focusContext.neighborIds.has(node.id);
                 const isDimmed = selectedNodeId && !isNeighbor;
-                const showLabel = isSelected || hoveredNodeId === node.id || (node.importance || 0) >= 5;
+                const isPrimaryLevelThreeNode = currentLevel === 3 && (node.label === currentTopic || node.type === "bridge");
+                const isPrimaryLevelFourNode = currentLevel === 4 && node.label === currentTopic;
+                const showLabel = isSelected
+                  || hoveredNodeId === node.id
+                  || node.type === "domain"
+                  || isPrimaryLevelThreeNode
+                  || isPrimaryLevelFourNode
+                  || currentLevel === 2
+                  || (currentLevel === 4 && node.type === "knowledge" && filteredData.nodes.length <= 10)
+                  || (currentLevel < 2 && (node.importance || 0) >= 5 && radius <= 16);
 
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
@@ -520,7 +718,7 @@ export default function BrainMap() {
       <section className="card">
         <h3>Details</h3>
         {!selectedNode ? (
-          <p className="muted">Click a topic node to inspect its related knowledge.</p>
+          <p className="muted">Click a node to inspect its related knowledge or zoom deeper into the map.</p>
         ) : (
           <div className="stack compact">
             <div className="brain-detail-header">
@@ -531,14 +729,14 @@ export default function BrainMap() {
             <p className="muted">{selectedNode.linked_count} linked item(s)</p>
             {!!focusContext.connectedLabels.length && (
               <div>
-                <p className="source-meta">Directly connected topics</p>
+                <p className="source-meta">Directly connected nodes</p>
                 <div className="tag-list">
                   {focusContext.connectedLabels.map((label) => (
                     <button
                       key={`${selectedNode.id}-${label}`}
                       type="button"
                       className="tag tag-button"
-                      onClick={() => focusNode(label)}
+                      onClick={() => currentLevel >= 3 ? openRelatedTopic(label) : focusNode(label)}
                     >
                       {label}
                     </button>
@@ -546,6 +744,7 @@ export default function BrainMap() {
                 </div>
               </div>
             )}
+            {selectedNode.summary && <p className="muted">{selectedNode.summary}</p>}
             {selectedNode.linked_titles?.length > 0 ? (
               <div>
                 <p className="source-meta">Linked notes</p>
@@ -559,7 +758,11 @@ export default function BrainMap() {
               <p className="muted">No linked knowledge items.</p>
             )}
             <p className="source-meta">
-              Suggested next step: {focusContext.connectedLabels[0] ? `Explore ${focusContext.connectedLabels[0]}` : "Open this topic to review its notes."}
+              Suggested next step: {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge")
+                ? "Click again or use the graph to zoom deeper."
+                : focusContext.connectedLabels[0]
+                  ? `Explore ${focusContext.connectedLabels[0]}`
+                  : "Open this item to review it in full."}
             </p>
             <div className="brain-detail-actions">
               {(selectedNode.type === "topic" || selectedNode.type === "bridge") && (
@@ -571,11 +774,11 @@ export default function BrainMap() {
                   Open Topic Page
                 </button>
               )}
-              {(selectedNode.type === "knowledge" || selectedNode.type === "note") && (
+              {selectedNode.type === "knowledge" && (
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() => navigate(`/knowledge?focus=${encodeURIComponent(selectedNode.id)}`)}
+                  onClick={() => navigate(`/knowledge?focus=${encodeURIComponent(selectedNode.id.replace("knowledge-", ""))}`)}
                 >
                   Open Note
                 </button>
