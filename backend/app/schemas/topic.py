@@ -10,6 +10,7 @@ class TopicSummary(BaseModel):
     name: str
     count: int
     discovery_method: str = "discovered"
+    domain: str | None = None
 
 
 class TopicItem(BaseModel):
@@ -49,6 +50,13 @@ class TopicDetailResponse(BaseModel):
     related_topics: list[str]
 
 
+
+class TopicSearchResult(BaseModel):
+    id: int
+    name: str
+    domain: str | None = None
+    count: int = 0
+
 class KnowledgeSuggestion(BaseModel):
     suggested_topic: str
     reason: str
@@ -87,3 +95,4 @@ class LearningPathResponse(BaseModel):
     topics: list[LearningPathTopic]
     completed_topics: list[str] = []
     upcoming_topics: list[str] = []
+

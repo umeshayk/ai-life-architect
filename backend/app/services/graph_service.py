@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
+from app.models.topic_relationship import TopicRelationship
+from app.models.topic import Topic
 from app.schemas.graph import GraphEdge, GraphNode, GraphResponse
 from app.services.topic_bridge_service import build_topic_bridges
 from app.services.topic_hierarchy_service import infer_topic_hierarchy, sync_topic_hierarchy_metadata
@@ -25,8 +27,10 @@ TOPIC_CATEGORY_MAP = {
     "Retrieval Augmented Generation": "AI",
     "Retrieval Optimization": "AI",
     "LLM Systems": "AI",
+    "Keyword Search": "AI",
     "Mushroom Farming": "Agriculture",
     "Hydroponic Farming": "Agriculture",
+    "Controlled Environment Agriculture": "Agriculture",
     "Spawn Quality": "Agriculture",
     "Substrate Sterilization": "Agriculture",
     "Yield Optimization": "Agriculture",
@@ -92,6 +96,12 @@ def _topic_node(
     )
 
 
+def _stored_relationships(db: Session, user_id: int) -> list[TopicRelationship]:
+    return db.scalars(
+        select(TopicRelationship).where(TopicRelationship.user_id == user_id)
+    ).all()
+
+
 def _build_graph_context(db: Session, user_id: int) -> dict:
     items = db.scalars(
         select(KnowledgeItem)
@@ -100,6 +110,7 @@ def _build_graph_context(db: Session, user_id: int) -> dict:
         .order_by(desc(KnowledgeItem.updated_at))
         .limit(160)
     ).all()
+    relationships = _stored_relationships(db, user_id)
     if not items:
         return {
             "items": [],
@@ -111,6 +122,7 @@ def _build_graph_context(db: Session, user_id: int) -> dict:
             "topic_metadata": {},
             "available_domains": [],
             "topic_to_groups": {},
+            "stored_relationships": relationships,
         }
 
     topic_counts: Counter[str] = Counter()
@@ -140,6 +152,14 @@ def _build_graph_context(db: Session, user_id: int) -> dict:
         for left, right in combinations(topic_names, 2):
             pair_counts[(left, right)] += 1
 
+    for relationship in relationships:
+        topic_counts[relationship.source_topic] += 0
+        topic_counts[relationship.target_topic] += 0
+        if relationship.source_topic not in recent_topic_names:
+            recent_topic_names.append(relationship.source_topic)
+        if relationship.target_topic not in recent_topic_names:
+            recent_topic_names.append(relationship.target_topic)
+
     top_topic_names = [topic_name for topic_name, _ in topic_counts.most_common(MAX_TOPIC_COUNT)]
     for topic_name in recent_topic_names:
         if topic_name in top_topic_names:
@@ -163,6 +183,7 @@ def _build_graph_context(db: Session, user_id: int) -> dict:
         "topic_metadata": topic_metadata,
         "available_domains": available_domains,
         "topic_to_groups": topic_to_groups,
+        "stored_relationships": relationships,
     }
 
 
@@ -203,6 +224,22 @@ def _build_bridge_context(db: Session, user_id: int, context: dict) -> dict:
         _BRIDGE_CACHE[cache_key] = (now, bridge_context)
 
     return bridge_context
+
+
+def _relationship_edges(context: dict, selected_topics: set[str]) -> list[GraphEdge]:
+    edges: list[GraphEdge] = []
+    for relationship in context["stored_relationships"]:
+        if relationship.source_topic not in selected_topics or relationship.target_topic not in selected_topics:
+            continue
+        edges.append(
+            GraphEdge(
+                source=relationship.source_topic,
+                target=relationship.target_topic,
+                type=relationship.relationship_type,
+                weight=relationship.confidence,
+            )
+        )
+    return edges
 
 
 def _domain_edges(pair_counts: Counter[tuple[str, str]], topic_to_groups: dict[str, str]) -> tuple[list[GraphEdge], Counter[str]]:
@@ -291,6 +328,7 @@ def _build_level_two(context: dict, domain: str | None) -> GraphResponse:
         for (source, target), weight in context["pair_counts"].most_common(40)
         if source in selected_topics and target in selected_topics
     ]
+    edges.extend(_relationship_edges(context, selected_topics))
     connection_counts: Counter[str] = Counter()
     for edge in edges:
         connection_counts[edge.source] += 1
@@ -313,7 +351,6 @@ def _build_level_three(context: dict, bridge_context: dict, domain: str | None, 
     topic_metadata: dict[str, dict[str, int | str | None]] = context["topic_metadata"]
     topic_to_groups: dict[str, str] = context["topic_to_groups"]
 
-    resolved_domain = domain or topic_to_groups.get(topic)
     neighbor_topics: set[str] = {topic}
     for (source, target), weight in context["pair_counts"].most_common(120):
         if weight < 1:
@@ -324,6 +361,12 @@ def _build_level_three(context: dict, bridge_context: dict, domain: str | None, 
             neighbor_topics.add(source)
         if len(neighbor_topics) >= 9:
             break
+
+    for relationship in context["stored_relationships"]:
+        if relationship.source_topic == topic:
+            neighbor_topics.add(relationship.target_topic)
+        elif relationship.target_topic == topic:
+            neighbor_topics.add(relationship.source_topic)
 
     parent_name = topic_metadata.get(topic, {}).get("parent_name")
     if isinstance(parent_name, str):
@@ -356,6 +399,7 @@ def _build_level_three(context: dict, bridge_context: dict, domain: str | None, 
         if source in selected_topics and target in selected_topics:
             edges.append(GraphEdge(source=source, target=target, type="topic_link", weight=float(weight)))
 
+    edges.extend(_relationship_edges(context, selected_topics))
     child_counts: Counter[str] = Counter()
     for edge in edges + bridge_edges:
         child_counts[edge.source] += 1
@@ -393,7 +437,7 @@ def _build_level_three(context: dict, bridge_context: dict, domain: str | None, 
             )
         )
 
-    return GraphResponse(nodes=nodes, edges=edges, level=3, domain=resolved_domain, topic=topic, available_domains=available_domains)
+    return GraphResponse(nodes=nodes, edges=edges, level=3, domain=domain or topic_to_groups.get(topic), topic=topic, available_domains=available_domains)
 
 
 def _build_level_four(context: dict, bridge_context: dict | None, domain: str | None, topic: str | None) -> GraphResponse:
@@ -506,7 +550,7 @@ def build_brain_map_for_user(db: Session, user_id: int, level: int = 1, domain: 
     context = _build_graph_context(db, user_id)
     context_elapsed_ms = round((monotonic() - context_started) * 1000, 1)
 
-    if not context["items"]:
+    if not context["items"] and not context["stored_relationships"]:
         logger.info(
             "brain_map level=%s domain=%s topic=%s context_ms=%s total_ms=%s empty=1",
             level,
@@ -554,3 +598,19 @@ def build_brain_map_for_user(db: Session, user_id: int, level: int = 1, domain: 
         len(response.edges),
     )
     return response
+
+
+def build_topic_graph_for_user(db: Session, user_id: int, topic_id: int) -> GraphResponse:
+    topic = db.scalar(
+        select(Topic).where(Topic.id == topic_id, Topic.user_id == user_id)
+    )
+    if topic is None:
+        raise ValueError("Topic not found")
+
+    return build_brain_map_for_user(
+        db,
+        user_id,
+        level=3,
+        domain=_topic_group(topic.name),
+        topic=topic.name,
+    )

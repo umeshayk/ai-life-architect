@@ -1,6 +1,6 @@
 from collections import Counter
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -11,6 +11,7 @@ from app.models.topic import Topic
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.routers.knowledge import serialize_knowledge
+from app.schemas.graph import GraphResponse
 from app.schemas.topic import (
     KnowledgeSuggestion,
     NextLearningTopic,
@@ -19,8 +20,10 @@ from app.schemas.topic import (
     TopicItemsResponse,
     TopicNoteSummary,
     TopicRebuildResponse,
+    TopicSearchResult,
     TopicSummary,
 )
+from app.services.graph_service import _topic_group, build_topic_graph_for_user
 from app.services.knowledge_gap_service import build_knowledge_gap_suggestions, get_next_learning_topics
 from app.services.retrieval import _extract_item_concepts
 from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
@@ -55,10 +58,55 @@ def get_next_learning_queue(db: Session = Depends(get_db), current_user: User = 
 def list_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     rows = get_topics_with_counts(db, current_user.id)
     return [
-        TopicSummary(id=topic.id, name=topic.name, count=count, discovery_method="discovered")
+        TopicSummary(id=topic.id, name=topic.name, count=count, discovery_method="discovered", domain=_topic_group(topic.name))
         for topic, count in rows
         if count > 0
     ]
+
+
+@router.get("/api/topics/search", response_model=list[TopicSearchResult])
+def search_topics(
+    q: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = q.strip().lower()
+    if not query:
+        return []
+
+    rows = get_topics_with_counts(db, current_user.id)
+    matches: list[TopicSearchResult] = []
+    for topic, count in rows:
+        topic_name = (topic.name or "").strip()
+        normalized_name = topic_name.lower()
+        if query not in normalized_name:
+            continue
+        matches.append(
+            TopicSearchResult(
+                id=topic.id,
+                name=topic_name,
+                domain=_topic_group(topic_name),
+                count=count,
+            )
+        )
+
+    matches.sort(
+        key=lambda item: (
+            0 if item.name.lower() == query else 1,
+            0 if item.name.lower().startswith(query) else 1,
+            -item.count,
+            item.name,
+        )
+    )
+    return matches[:8]
+
+
+@router.get("/api/topics/{topic_id}/graph", response_model=GraphResponse)
+def get_topic_graph(topic_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        return build_topic_graph_for_user(db, current_user.id, topic_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/api/topics/{topic_id}/items", response_model=TopicItemsResponse)
@@ -72,7 +120,7 @@ def get_topic_items(topic_id: int, db: Session = Depends(get_db), current_user: 
         .where(ContentTopic.topic_id == topic.id, KnowledgeItem.user_id == current_user.id)
     ).all()
     return TopicItemsResponse(
-        topic=TopicSummary(id=topic.id, name=topic.name, count=len(items), discovery_method="discovered"),
+        topic=TopicSummary(id=topic.id, name=topic.name, count=len(items), discovery_method="discovered", domain=_topic_group(topic.name)),
         items=[serialize_knowledge(item) for item in items],
     )
 

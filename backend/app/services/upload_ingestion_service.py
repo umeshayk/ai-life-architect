@@ -217,3 +217,4 @@ def update_ingested_knowledge_item(
     db.commit()
     db.refresh(item)
     return finalize_ingested_item(db, item, before_paths=before_paths, skip_topic_generation=skip_topic_generation, preview=preview)
+

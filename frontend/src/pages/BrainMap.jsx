@@ -247,6 +247,19 @@ function levelSummary(level, domain, topic) {
   return `Level 4: saved knowledge items for ${topic || "this topic"}`;
 }
 
+function normalizeGraphResponse(payload) {
+  const nodes = (payload?.nodes || []).map((node) => ({
+    ...node,
+    label: node.label || node.name || "Untitled Topic"
+  }));
+
+  return {
+    ...payload,
+    nodes,
+    edges: payload?.edges || []
+  };
+}
+
 
 function DomainTopicIcon({ domain }) {
   const style = DOMAIN_ICON_STYLES[domain] || DOMAIN_ICON_STYLES.General;
@@ -346,6 +359,7 @@ export default function BrainMap() {
   const shellRef = useRef(null);
   const didAutoFitRef = useRef(false);
   const lastSearchFocusRef = useRef("");
+  const pendingCenterLabelRef = useRef("");
   const [graph, setGraph] = useState({ nodes: [], edges: [], level: 1, domain: null, topic: null, available_domains: [] });
   const [currentLevel, setCurrentLevel] = useState(1);
   const [currentDomain, setCurrentDomain] = useState("");
@@ -354,6 +368,7 @@ export default function BrainMap() {
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [search, setSearch] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState("");
   const [learningPaths, setLearningPaths] = useState([]);
   const [learningPathsError, setLearningPathsError] = useState("");
@@ -383,7 +398,7 @@ export default function BrainMap() {
     api
       .get("/api/brain-map", { params })
       .then((response) => {
-        setGraph(response.data);
+        setGraph(normalizeGraphResponse(response.data));
         didAutoFitRef.current = false;
       })
       .catch((err) => setError(err.response?.data?.detail || "Unable to load the brain map."));
@@ -621,32 +636,64 @@ export default function BrainMap() {
     focusNode(node.id);
   };
 
-  const handleSearchSubmit = (event) => {
+  const handleSearchSubmit = async (event) => {
     event.preventDefault();
-    if (!searchMatches.length) {
+    const query = search.trim();
+    if (!query) {
       return;
     }
-    handleNodeAction(searchMatches[0]);
+
+    setIsSearching(true);
+    setError("");
+
+    try {
+      const searchResponse = await api.get("/api/topics/search", { params: { q: query } });
+      const match = searchResponse.data?.[0];
+      if (!match) {
+        setError(`No topic found for "${query}".`);
+        return;
+      }
+
+      const graphResponse = await api.get(`/api/topics/${match.id}/graph`);
+      const nextGraph = normalizeGraphResponse(graphResponse.data);
+      setHistoryStack((prev) => [...prev, { level: currentLevel, domain: currentDomain, topic: currentTopic }]);
+      setGraph(nextGraph);
+      setCurrentLevel(nextGraph.level || 3);
+      setCurrentDomain(nextGraph.domain || match.domain || "");
+      setCurrentTopic(nextGraph.topic || match.name);
+      setSelectedNodeId(null);
+      setSearch(match.name);
+      lastSearchFocusRef.current = `${query.toLowerCase()}:${match.id}`;
+      pendingCenterLabelRef.current = nextGraph.topic || match.name;
+      didAutoFitRef.current = true;
+    } catch (err) {
+      setError(err.response?.data?.detail || "Unable to search for that topic.");
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   useEffect(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) {
-      lastSearchFocusRef.current = "";
-      return;
-    }
-    if (!searchMatches.length) {
+    const targetLabel = pendingCenterLabelRef.current;
+    if (!targetLabel || !filteredData.nodes.length || !fgRef.current) {
       return;
     }
 
-    const nextFocusKey = `${query}:${searchMatches[0].id}`;
-    if (lastSearchFocusRef.current === nextFocusKey) {
+    const match = filteredData.nodes.find((node) => node.label.toLowerCase() === targetLabel.toLowerCase());
+    if (!match) {
       return;
     }
 
-    lastSearchFocusRef.current = nextFocusKey;
-    focusNode(searchMatches[0].id);
-  }, [search, searchMatches]);
+    pendingCenterLabelRef.current = "";
+    setSelectedNodeId(match.id);
+    requestAnimationFrame(() => {
+      if (!fgRef.current) {
+        return;
+      }
+      fgRef.current.centerAt(match.x || graphSize.width / 2, match.y || graphSize.height / 2, 700);
+      fgRef.current.zoom(currentLevel >= 4 ? 2.5 : 2.15, 700);
+    });
+  }, [currentLevel, filteredData.nodes, graphSize]);
 
   const focusGroup = (group) => {
     if (currentLevel === 1) {
@@ -736,7 +783,9 @@ export default function BrainMap() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder={currentLevel >= 4 ? "Search items in this view" : "Search and focus this view"}
+              placeholder={currentLevel >= 4 ? "Search topic or item in this view" : "Search topic (e.g., Hybrid Search)"}
+              aria-label="Search topics"
+              disabled={isSearching}
             />
           </form>
           <button type="button" className="secondary-button" onClick={handleBack} disabled={!historyStack.length}>
@@ -747,7 +796,8 @@ export default function BrainMap() {
           </button>
         </div>
         <p className="muted">{levelSummary(graph.level || currentLevel, graph.domain || currentDomain, graph.topic || currentTopic)}</p>
-        {!!searchMatches.length && (
+        {isSearching && <p className="muted">Finding the best topic match and loading its related graph...</p>}
+        {!!searchMatches.length && !isSearching && (
           <div className="brain-map-search-results">
             {searchMatches.map((match) => (
               <button
@@ -853,26 +903,37 @@ export default function BrainMap() {
               onNodeClick={handleNodeAction}
               nodeCanvasObject={(node, ctx, globalScale) => {
                 const label = node.label;
-                const fontSize = Math.max(11, 15 / globalScale);
+                const fontSize = Math.max(9, 12 / globalScale);
                 const radius = nodeRadius(node, currentLevel, currentTopic);
                 const isSelected = selectedNodeId === node.id;
                 const isNeighbor = focusContext.neighborIds.has(node.id);
                 const isDimmed = selectedNodeId && !isNeighbor;
                 const isPrimaryLevelThreeNode = currentLevel === 3 && (node.label === currentTopic || node.type === "bridge");
                 const isPrimaryLevelFourNode = currentLevel === 4 && node.label === currentTopic;
+                const showLevelThreeLabel = currentLevel === 3 && (
+                  node.type === "topic"
+                  || node.type === "bridge"
+                  || isSelected
+                  || hoveredNodeId === node.id
+                );
                 const showLabel = isSelected
                   || hoveredNodeId === node.id
                   || node.type === "domain"
                   || isPrimaryLevelThreeNode
                   || isPrimaryLevelFourNode
                   || currentLevel === 2
+                  || showLevelThreeLabel
                   || (currentLevel === 4 && node.type === "knowledge" && filteredData.nodes.length <= 10)
                   || (currentLevel < 2 && (node.importance || 0) >= 5 && radius <= 16);
 
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
                 ctx.globalAlpha = isDimmed ? 0.22 : 1;
-                ctx.fillStyle = graphColor(node.group, node.importance || 0, false);
+                ctx.fillStyle = isSelected
+                  ? "#f97316"
+                  : node.label === currentTopic && currentLevel >= 3
+                    ? "#2563eb"
+                    : graphColor(node.group, node.importance || 0, false);
                 ctx.fill();
                 ctx.globalAlpha = 1;
 
