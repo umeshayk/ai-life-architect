@@ -258,6 +258,12 @@ select {
   background: #f8fafc;
 }
 
+.related-note-button {
+  justify-content: flex-start;
+  text-align: left;
+  font-weight: 600;
+}
+
 .simple-list {
   margin: 0;
   padding-left: 1.25rem;

@@ -38,6 +38,7 @@ def health():
 app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(knowledge.router)
+app.include_router(knowledge.api_router)
 app.include_router(upload.router)
 app.include_router(ai.router)
 app.include_router(topics.router)

@@ -75,6 +75,7 @@ export default function Knowledge() {
   const [items, setItems] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [relatedItems, setRelatedItems] = useState({});
+  const [relatedKnowledge, setRelatedKnowledge] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [loadingRelatedId, setLoadingRelatedId] = useState(null);
   const [query, setQuery] = useState("");
@@ -137,11 +138,36 @@ export default function Knowledge() {
     }
     setLoadingRelatedId(id);
     try {
-      const response = await api.get(`/api/connections/${id}`);
-      setRelatedItems((current) => ({ ...current, [id]: response.data.related_items }));
+      const [connectionsResponse, relatedResponse] = await Promise.all([
+        api.get(`/api/connections/${id}`),
+        api.get(`/api/knowledge/${id}/related`)
+      ]);
+      setRelatedItems((current) => ({ ...current, [id]: connectionsResponse.data.related_items }));
+      setRelatedKnowledge((current) => ({ ...current, [id]: relatedResponse.data }));
     } finally {
       setLoadingRelatedId(null);
     }
+  };
+
+  const handleRelatedNoteClick = async (id) => {
+    setExpandedId(id);
+    if (!relatedItems[id] || !relatedKnowledge[id]) {
+      setLoadingRelatedId(id);
+      try {
+        const [connectionsResponse, relatedResponse] = await Promise.all([
+          api.get(`/api/connections/${id}`),
+          api.get(`/api/knowledge/${id}/related`)
+        ]);
+        setRelatedItems((current) => ({ ...current, [id]: connectionsResponse.data.related_items }));
+        setRelatedKnowledge((current) => ({ ...current, [id]: relatedResponse.data }));
+      } finally {
+        setLoadingRelatedId(null);
+      }
+    }
+
+    window.setTimeout(() => {
+      document.getElementById(`knowledge-item-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
   };
 
   const handleSearch = async (event) => {
@@ -304,7 +330,7 @@ export default function Knowledge() {
               </>
             )}
             {displayedItems.map((item) => (
-              <article key={item.id} className="result-item">
+              <article key={item.id} id={`knowledge-item-${item.id}`} className="result-item">
                 <div className="row-between">
                   <div>
                     <strong>{item.title}</strong>
@@ -346,17 +372,73 @@ export default function Knowledge() {
                     <h4>Related Knowledge</h4>
                     {loadingRelatedId === item.id ? (
                       <p className="muted">Loading related items...</p>
-                    ) : (relatedItems[item.id] || []).length > 0 ? (
-                      <div className="stack compact">
-                        {relatedItems[item.id].map((related) => (
-                          <article key={`${item.id}-${related.id}`} className="related-item">
-                            <strong>{related.title}</strong>
-                            <p className="muted">
-                              {formatTypeLabel(related.type)} | {Math.round(related.similarity_score * 100)}% match
-                            </p>
-                            <p>{related.summary || "No summary available."}</p>
-                          </article>
-                        ))}
+                    ) : (relatedItems[item.id] || []).length > 0 || relatedKnowledge[item.id]?.related_topics?.length || relatedKnowledge[item.id]?.related_notes?.length ? (
+                      <div className="dashboard-grid">
+                        <article className="related-item">
+                          <h5>Related Topics</h5>
+                          {relatedKnowledge[item.id]?.related_topics?.length ? (
+                            <div className="tag-list">
+                              {relatedKnowledge[item.id].related_topics.map((topic, index) => (
+                                <span key={`${item.id}-related-topic-${index}-${topic}`} className="tag">{topic}</span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="muted">No related topics found yet.</p>
+                          )}
+                        </article>
+                        <article className="related-item">
+                          <h5>Related Notes</h5>
+                          {relatedKnowledge[item.id]?.related_notes?.length ? (
+                            <div className="stack compact">
+                              {relatedKnowledge[item.id].related_notes.map((relatedNote, index) => (
+                                <div key={`${item.id}-related-note-${index}-${relatedNote.id}`} className="stack compact">
+                                  <button
+                                    type="button"
+                                    className="link-button related-note-button"
+                                    onClick={() => handleRelatedNoteClick(relatedNote.id)}
+                                  >
+                                    {relatedNote.title}
+                                  </button>
+                                  {relatedNote.shared_topics?.length > 0 && (
+                                    <>
+                                      <p className="source-meta">Shared topics:</p>
+                                      <div className="tag-list">
+                                        {relatedNote.shared_topics.map((topic, topicIndex) => (
+                                          <span
+                                            key={`${item.id}-related-note-topic-${index}-${topicIndex}-${topic}`}
+                                            className="tag"
+                                          >
+                                            {topic}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="muted">No related notes found yet.</p>
+                          )}
+                        </article>
+                        <article className="related-item">
+                          <h5>Semantic Matches</h5>
+                          {(relatedItems[item.id] || []).length > 0 ? (
+                            <div className="stack compact">
+                              {relatedItems[item.id].map((related) => (
+                                <article key={`${item.id}-${related.id}`} className="related-item">
+                                  <strong>{related.title}</strong>
+                                  <p className="muted">
+                                    {formatTypeLabel(related.type)} | {Math.round(related.similarity_score * 100)}% match
+                                  </p>
+                                  <p>{related.summary || "No summary available."}</p>
+                                </article>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="muted">No semantic matches found yet.</p>
+                          )}
+                        </article>
                       </div>
                     ) : (
                       <p className="muted">No related knowledge found yet.</p>

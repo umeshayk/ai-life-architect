@@ -7,15 +7,23 @@ from app.core.database import get_db
 from app.models.knowledge import KnowledgeItem
 from app.models.user import User
 from app.routers.auth import get_current_user
-from app.schemas.knowledge import KnowledgeCreate, KnowledgeResponse, KnowledgeTopic, KnowledgeUpdate, SearchRequest
+from app.schemas.knowledge import (
+    KnowledgeCreate,
+    KnowledgeResponse,
+    KnowledgeTopic,
+    KnowledgeUpdate,
+    RelatedKnowledgeResponse,
+    SearchRequest,
+)
 from app.services.connection_service import rebuild_connections_for_user
 from app.services.embeddings import sync_knowledge_embedding
-from app.services.retrieval import semantic_search
+from app.services.retrieval import find_related_knowledge_by_topics, semantic_search
 from app.services.summarizer import build_summary_and_tags
 from app.services.topic_service import assign_topics_to_item
 
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
+api_router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
 
 def serialize_knowledge(item: KnowledgeItem) -> KnowledgeResponse:
@@ -168,3 +176,15 @@ def search_knowledge(
     ).all()
     item_map = {item.id: item for item in loaded_items}
     return [serialize_knowledge(item_map[match.item.id]) for match in items if match.item.id in item_map]
+
+
+@api_router.get("/{item_id}/related", response_model=RelatedKnowledgeResponse)
+def get_related_knowledge(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    related = find_related_knowledge_by_topics(db, current_user.id, item_id)
+    if related is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge item not found")
+    return related

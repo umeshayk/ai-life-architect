@@ -57,3 +57,14 @@ class WeeklyInsightsResponse(BaseModel):
     items_added_this_week: int
     top_tags: list[str]
     recent_titles: list[str]
+
+
+class RelatedKnowledgeNote(BaseModel):
+    id: int
+    title: str
+    shared_topics: list[str] = Field(default_factory=list)
+
+
+class RelatedKnowledgeResponse(BaseModel):
+    related_topics: list[str]
+    related_notes: list[RelatedKnowledgeNote]
