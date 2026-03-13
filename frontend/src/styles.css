@@ -1409,3 +1409,119 @@ select {
   border: 1.5px solid #94a3b8;
   background: #f8fafc;
 }
+.ingestion-summary-card {
+  background: linear-gradient(180deg, #fbfdff 0%, #f8fbff 100%);
+}
+
+.ingestion-summary-header {
+  align-items: flex-start;
+}
+
+.ingestion-summary-header h3 {
+  margin: 0 0 0.2rem;
+}
+
+.ingestion-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.ingestion-summary-section {
+  margin-top: 1rem;
+}
+
+.ingestion-path-row {
+  background: #f8fbff;
+}
+
+.ingestion-summary-actions {
+  margin-top: 1.1rem;
+}
+
+@media (max-width: 900px) {
+  .ingestion-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.upload-picker-shell {
+  position: relative;
+}
+
+.upload-picker-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.upload-picker-label {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  min-height: 92px;
+  padding: 1rem 1.1rem;
+  border: 1px dashed #93c5fd;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.upload-picker-label:hover {
+  border-color: #60a5fa;
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.12);
+  transform: translateY(-1px);
+}
+
+.upload-picker-input:focus + .upload-picker-label {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+
+.upload-picker-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 132px;
+  padding: 0.8rem 1rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.18);
+  flex-shrink: 0;
+}
+
+.upload-picker-name {
+  color: #64748b;
+  font-size: 0.98rem;
+  line-height: 1.45;
+}
+
+.upload-picker-name.has-file {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.upload-picker-meta {
+  margin-top: 0.55rem;
+}
+
+@media (max-width: 900px) {
+  .upload-picker-label {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .upload-picker-button {
+    min-width: 0;
+  }
+}

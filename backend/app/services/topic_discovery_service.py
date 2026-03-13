@@ -8,7 +8,7 @@ from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.models.knowledge_connection import KnowledgeConnection
 from app.models.topic import Topic
-from app.services.topic_extractor import extract_topic_phrases, tokenize_topic_segment
+from app.services.topic_extractor import extract_clean_topics, extract_clean_topic_scores, extract_topic_phrases, tokenize_topic_segment
 from app.services.topic_normalizer_service import get_or_create_normalized_topic, merge_similar_topics, normalize_topic_label
 
 
@@ -112,8 +112,10 @@ ALIAS_MAP = {
     "rag": "Retrieval Augmented Generation",
     "vector database": "Vector Databases",
     "vector databases": "Vector Databases",
+    "vector search": "Vector Databases",
     "embedding": "Embeddings",
     "embeddings": "Embeddings",
+    "keyword search": "Keyword Search",
     "knowledge mgmt": "Knowledge Management",
     "knowledge management": "Knowledge Management",
     "second brain": "Knowledge Management",
@@ -125,6 +127,7 @@ ALIAS_MAP = {
     "farm business": "Farm Business",
     "hydroponic farming": "Hydroponic Farming",
     "hydroponics": "Hydroponic Farming",
+    "controlled environment agriculture": "Controlled Environment Agriculture",
     "fastapi": "FastAPI",
     "react": "React",
     "building second brain": "Building Second Brain",
@@ -151,10 +154,12 @@ CANONICAL_MULTI_WORD_TOPICS = {
     "AI / Technology",
     "AI Life Architect",
     "Building Second Brain",
+    "Controlled Environment Agriculture",
     "Embeddings",
     "Farm Business",
     "FastAPI",
     "Hydroponic Farming",
+    "Keyword Search",
     "Knowledge Organization",
     "Knowledge Management",
     "LLM Systems",
@@ -169,6 +174,8 @@ CANONICAL_MULTI_WORD_TOPICS = {
 }
 
 DISCOVERY_PATTERNS = [
+    ("Hybrid Search", ("hybrid", "search")),
+    ("Keyword Search", ("keyword", "search")),
     ("Semantic Search", ("semantic", "search")),
     ("Retrieval Augmented Generation", ("retrieval", "augmented")),
     ("Retrieval Augmented Generation", ("augmented", "generation")),
@@ -180,6 +187,7 @@ DISCOVERY_PATTERNS = [
     ("Mushroom Farming", ("oyster", "mushroom")),
     ("Hydroponic Farming", ("hydroponic",)),
     ("Hydroponic Farming", ("hydroponics",)),
+    ("Controlled Environment Agriculture", ("controlled", "environment", "agriculture")),
     ("Vector Databases", ("vector", "database")),
     ("Vector Databases", ("vector", "databases")),
     ("Embeddings", ("embedding",)),
@@ -366,19 +374,30 @@ def _extract_candidate_scores(item: KnowledgeItem) -> Counter[str]:
         if all(term in normalized_tokens for term in terms):
             scores[label] += 2.8 if len(terms) > 1 else 1.8
 
+    clean_topics = extract_clean_topic_scores(combined_text, max_topics=5)
+    for label, score in clean_topics.items():
+        scores[normalize_topic_name(label) or label] += score * 2.1
+
     for text, weight in sources:
         if not text:
             continue
+        clean_topics = extract_clean_topics(text, max_topics=4)
+        for index, label in enumerate(clean_topics, start=1):
+            normalized_label = normalize_topic_name(label) or label
+            if not normalized_label or _is_junk_topic(normalized_label):
+                continue
+            scores[normalized_label] += weight * max(1.0, 3.4 - index * 0.5)
+
         segments = re.split(r"[.!?\n,:;()\-/]+", text)
         for segment in segments:
             tokens = _tokenize_segment(segment)
             if not tokens:
                 continue
-            for phrase, size in extract_topic_phrases(tokens, max_words=4):
+            for phrase, size in extract_topic_phrases(tokens, max_words=3):
                 label = normalize_topic_name(phrase)
                 if not label or _is_junk_topic(label):
                     continue
-                scores[label] += weight * {4: 1.7, 3: 1.5, 2: 1.35}.get(size, 1.2)
+                scores[label] += weight * {3: 1.45, 2: 1.25}.get(size, 0.85)
 
             for phrase in tokens:
                 label = normalize_topic_name(phrase)
@@ -386,7 +405,7 @@ def _extract_candidate_scores(item: KnowledgeItem) -> Counter[str]:
                     continue
                 if not _allow_single_word_topic(phrase, label):
                     continue
-                scores[label] += weight * 0.7
+                scores[label] += weight * 0.55
     return scores
 
 
@@ -581,3 +600,29 @@ def discover_topics_for_user(db: Session, user_id: int, reset_topics: bool = Tru
 
 def reassign_topics_for_user(db: Session, user_id: int) -> tuple[int, int, int]:
     return discover_topics_for_user(db, user_id, reset_topics=False)
+
+
+def _extract_raw_candidate_scores(item: KnowledgeItem) -> Counter[str]:
+    text = " ".join([item.title or "", item.summary or "", item.content or "", item.tags or ""])
+    scores = extract_clean_topic_scores(text, max_topics=5)
+    if scores:
+        return scores
+
+    for label, score in _extract_candidate_scores(item).most_common(3):
+        scores[label] = score
+    return scores
+
+
+def preview_topic_discovery_for_item(item: KnowledgeItem) -> dict[str, list[str]]:
+    raw_scores = _extract_raw_candidate_scores(item)
+    extracted_topics = [label for label, _score in raw_scores.most_common(3)]
+    assignments, _ = _build_item_topic_assignments([item])
+    normalized_topics = [label for label, _confidence in assignments.get(item.id, [])][:3]
+
+    if not extracted_topics:
+        extracted_topics = normalized_topics.copy()
+
+    return {
+        "extracted_topics": extracted_topics[:3],
+        "normalized_topics": normalized_topics[:3],
+    }

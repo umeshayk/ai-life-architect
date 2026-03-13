@@ -9,6 +9,25 @@ class KnowledgeTopic(BaseModel):
     confidence_score: float
 
 
+class LearningPathImpact(BaseModel):
+    path_name: str
+    progress_before: int
+    progress_after: int
+    covered_before: int
+    covered_after: int
+    total_count: int
+
+
+class IngestionSummary(BaseModel):
+    item_id: int
+    title: str
+    extracted_topics: list[str] = Field(default_factory=list)
+    normalized_topics: list[str] = Field(default_factory=list)
+    graph_updated: bool = False
+    learning_paths_affected: list[LearningPathImpact] = Field(default_factory=list)
+    suggested_next_topics: list[str] = Field(default_factory=list)
+
+
 class KnowledgeBase(BaseModel):
     type: str = Field(pattern="^(note|link|file)$")
     title: str = Field(min_length=1, max_length=255)
@@ -43,6 +62,7 @@ class KnowledgeResponse(BaseModel):
     related_count: int = 0
     source_url: str | None = None
     file_name: str | None = None
+    ingestion_summary: IngestionSummary | None = None
     created_at: datetime
     updated_at: datetime
 

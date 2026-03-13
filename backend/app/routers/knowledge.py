@@ -16,17 +16,15 @@ from app.schemas.knowledge import (
     SearchRequest,
 )
 from app.services.connection_service import rebuild_connections_for_user
-from app.services.embeddings import sync_knowledge_embedding
 from app.services.retrieval import find_related_knowledge_by_topics, semantic_search
-from app.services.summarizer import build_summary_and_tags
-from app.services.topic_service import assign_topics_to_item
+from app.services.upload_ingestion_service import create_ingested_knowledge_item, update_ingested_knowledge_item
 
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 api_router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
 
-def serialize_knowledge(item: KnowledgeItem) -> KnowledgeResponse:
+def serialize_knowledge(item: KnowledgeItem, ingestion_summary: dict | None = None) -> KnowledgeResponse:
     return KnowledgeResponse(
         id=item.id,
         user_id=item.user_id,
@@ -47,6 +45,7 @@ def serialize_knowledge(item: KnowledgeItem) -> KnowledgeResponse:
         related_count=len(item.outgoing_connections),
         source_url=item.source_url,
         file_name=item.file_name,
+        ingestion_summary=ingestion_summary,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
@@ -58,33 +57,17 @@ def create_knowledge(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    summary, generated_tags = build_summary_and_tags(payload.title, payload.content)
-    item = KnowledgeItem(
+    item, ingestion_summary = create_ingested_knowledge_item(
+        db,
         user_id=current_user.id,
-        type=payload.type,
+        item_type=payload.type,
         title=payload.title,
         content=payload.content,
-        summary=summary,
-        tags=",".join(payload.tags or generated_tags),
         source_url=str(payload.source_url) if payload.source_url else None,
+        tags=payload.tags,
         file_name=payload.file_name,
     )
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    sync_knowledge_embedding(db, item)
-    assign_topics_to_item(db, item)
-    rebuild_connections_for_user(db, current_user.id)
-    db.refresh(item)
-    item = db.scalar(
-        select(KnowledgeItem)
-        .options(
-            selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic),
-            selectinload(KnowledgeItem.outgoing_connections),
-        )
-        .where(KnowledgeItem.id == item.id)
-    )
-    return serialize_knowledge(item)
+    return serialize_knowledge(item, ingestion_summary=ingestion_summary)
 
 
 @router.get("", response_model=list[KnowledgeResponse])
@@ -115,32 +98,26 @@ def update_knowledge(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge item not found")
 
     data = payload.model_dump(exclude_unset=True)
-    for field, value in data.items():
-        if field == "source_url" and value is not None:
-            value = str(value)
-        if field == "tags" and value is not None:
-            value = ",".join(value)
-        setattr(item, field, value)
+    title = data.get("title", item.title)
+    content = data.get("content", item.content)
+    source_url = data.get("source_url", item.source_url)
+    if source_url is not None:
+        source_url = str(source_url)
+    tags = data.get("tags")
+    if tags is None:
+        tags = [tag.strip() for tag in (item.tags or "").split(",") if tag.strip()]
 
-    item.summary, generated_tags = build_summary_and_tags(item.title, item.content)
-    if "tags" not in data:
-        item.tags = ",".join(generated_tags)
-
-    db.commit()
-    db.refresh(item)
-    sync_knowledge_embedding(db, item)
-    assign_topics_to_item(db, item)
-    rebuild_connections_for_user(db, current_user.id)
-    db.refresh(item)
-    item = db.scalar(
-        select(KnowledgeItem)
-        .options(
-            selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic),
-            selectinload(KnowledgeItem.outgoing_connections),
-        )
-        .where(KnowledgeItem.id == item.id)
+    item, ingestion_summary = update_ingested_knowledge_item(
+        db,
+        item,
+        item_type=item.type,
+        title=title,
+        content=content,
+        source_url=source_url,
+        tags=tags,
+        file_name=item.file_name,
     )
-    return serialize_knowledge(item)
+    return serialize_knowledge(item, ingestion_summary=ingestion_summary)
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/client";
+import IngestionSummaryCard from "../components/IngestionSummaryCard";
 
 const initialForm = { type: "note", title: "", content: "", source_url: "" };
 const formatTypeLabel = (type) => type.charAt(0).toUpperCase() + type.slice(1);
@@ -82,6 +83,7 @@ export default function Knowledge() {
   const [query, setQuery] = useState("");
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState("");
+  const [ingestionSummary, setIngestionSummary] = useState(null);
   const [searchError, setSearchError] = useState("");
   const [searching, setSearching] = useState(false);
   const topicFilter = searchParams.get("topic")?.trim() || "";
@@ -113,10 +115,11 @@ export default function Knowledge() {
     event.preventDefault();
     setError("");
     try {
-      await api.post("/knowledge", {
+      const response = await api.post("/knowledge", {
         ...form,
         source_url: form.source_url.trim() || null
       });
+      setIngestionSummary(response.data.ingestion_summary || null);
       setForm(initialForm);
       await loadItems();
     } catch (err) {
@@ -294,6 +297,8 @@ export default function Knowledge() {
       </section>
 
       <section className="stack">
+        <IngestionSummaryCard summary={ingestionSummary} title="Knowledge Processed" />
+
         <div className="card">
           <h2>Semantic Search</h2>
           <form onSubmit={handleSearch} className="inline-form">

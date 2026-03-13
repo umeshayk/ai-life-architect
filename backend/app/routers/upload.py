@@ -6,16 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.knowledge import KnowledgeItem
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.routers.knowledge import serialize_knowledge
 from app.schemas.knowledge import KnowledgeResponse
-from app.services.embeddings import sync_knowledge_embedding
 from app.services.file_parser import parse_uploaded_file
-from app.services.summarizer import build_summary_and_tags
-from app.services.connection_service import rebuild_connections_for_user
-from app.services.topic_service import assign_topics_to_item
+from app.services.upload_ingestion_service import create_ingested_knowledge_item
 
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -38,23 +34,20 @@ async def upload_file(
     file_path = upload_dir / stored_name
     file_path.write_bytes(await file.read())
 
-    content = parse_uploaded_file(file_path, original_name=file.filename or stored_name)
-    summary, tags = build_summary_and_tags(file.filename or stored_name, content)
+    extraction_failed = False
+    try:
+        content = parse_uploaded_file(file_path, original_name=file.filename or stored_name)
+    except Exception:
+        extraction_failed = True
+        content = f"Uploaded file: {file.filename or stored_name}. Text extraction failed, so manual topic assignment may be needed."
 
-    item = KnowledgeItem(
+    item, ingestion_summary = create_ingested_knowledge_item(
+        db,
         user_id=current_user.id,
-        type="file",
+        item_type="file",
         title=file.filename or stored_name,
         content=content,
-        summary=summary,
-        tags=",".join(tags),
         file_name=file.filename or stored_name,
+        skip_topic_generation=extraction_failed,
     )
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    sync_knowledge_embedding(db, item)
-    assign_topics_to_item(db, item)
-    rebuild_connections_for_user(db, current_user.id)
-    db.refresh(item)
-    return serialize_knowledge(item)
+    return serialize_knowledge(item, ingestion_summary=ingestion_summary)

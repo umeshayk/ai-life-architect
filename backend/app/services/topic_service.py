@@ -7,13 +7,17 @@ from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.models.topic import Topic
 from app.services.topic_discovery_service import assign_topics_for_item as assign_topics_directly_for_item
-from app.services.topic_discovery_service import discover_topics_for_user, reassign_topics_for_user
+from app.services.topic_discovery_service import discover_topics_for_user, preview_topic_discovery_for_item, reassign_topics_for_user
 from app.services.topic_normalizer_service import merge_similar_topics
 
 
 def assign_topics_to_item(db: Session, item: KnowledgeItem) -> tuple[int, int]:
     topics_created, links_created = assign_topics_directly_for_item(db, item)
     return topics_created, links_created
+
+
+def preview_topics_for_item(item: KnowledgeItem) -> dict[str, list[str]]:
+    return preview_topic_discovery_for_item(item)
 
 
 def rebuild_topics_for_user(db: Session, user_id: int) -> tuple[int, int, int]:
