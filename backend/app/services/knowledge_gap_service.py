@@ -9,7 +9,7 @@ from app.models.topic import Topic
 from app.services.topic_service import get_raw_topics_with_counts
 
 
-KNOWLEDGE_PATTERNS: list[dict[str, object]] = [
+LEARNING_PATHS: list[dict[str, object]] = [
     {
         "name": "AI_RETRIEVAL_STACK",
         "domain": "AI",
@@ -30,6 +30,18 @@ KNOWLEDGE_PATTERNS: list[dict[str, object]] = [
             "Mushroom Farming",
             "Hydroponic Farming",
             "Controlled Environment Agriculture",
+            "Farm Automation",
+            "Yield Optimization",
+        ],
+    },
+    {
+        "name": "KNOWLEDGE_STACK",
+        "domain": "Knowledge",
+        "topics": [
+            "Knowledge Management",
+            "Action Planning",
+            "Personal Knowledge Systems",
+            "AI Knowledge Architect",
         ],
     },
     {
@@ -41,21 +53,22 @@ KNOWLEDGE_PATTERNS: list[dict[str, object]] = [
             "Real Estate Data Analytics",
         ],
     },
-    {
-        "name": "KNOWLEDGE_SYSTEMS",
-        "domain": "Knowledge",
-        "topics": [
-            "Knowledge Management",
-            "AI Life Architect",
-            "Semantic Search",
-            "Action Planning",
-        ],
-    },
 ]
+
 MIN_PATTERN_MATCHES = 2
 MAX_SUGGESTIONS = 10
-STARTED_COVERAGE_THRESHOLD = 6
+DEFAULT_NEXT_LIMIT = 5
 COVERED_COVERAGE_THRESHOLD = 8
+DOMAIN_PRIORITY = {
+    "AI": 0,
+    "Knowledge": 1,
+    "Agriculture": 2,
+    "Business": 3,
+    "Math": 4,
+    "Mathematics": 4,
+    "Spiritual": 5,
+    "General": 6,
+}
 
 
 def _topic_name_variants(name: str) -> set[str]:
@@ -69,6 +82,10 @@ def _topic_name_variants(name: str) -> set[str]:
         variants.add("llm systems")
     if normalized == "llm systems":
         variants.add("llms")
+    if normalized == "ai knowledge architect":
+        variants.add("ai life architect")
+    if normalized == "ai life architect":
+        variants.add("ai knowledge architect")
     return variants
 
 
@@ -76,11 +93,13 @@ def _normalize_topic_records(topics: list[tuple[Topic, int]]) -> tuple[set[str],
     existing_topics: set[str] = set()
     linked_item_counts: Counter[str] = Counter()
     canonical_names: dict[str, str] = {}
+
     for topic, count in topics:
         for variant in _topic_name_variants(topic.name):
             existing_topics.add(variant)
             linked_item_counts[variant] = count
             canonical_names[variant] = topic.name
+
     return existing_topics, linked_item_counts, canonical_names
 
 
@@ -102,8 +121,7 @@ def _build_topic_relationship_stats(items: list[KnowledgeItem]) -> tuple[Counter
         for topic_name in topic_names:
             revisit_counts[topic_name] += 1
         for topic_name in topic_names:
-            siblings = {name for name in topic_names if name != topic_name}
-            related_topics[topic_name].update(siblings)
+            related_topics[topic_name].update({name for name in topic_names if name != topic_name})
 
     return revisit_counts, related_topics
 
@@ -118,50 +136,33 @@ def _format_topic_list(topic_names: list[str]) -> str:
     return f"{', '.join(topic_names[:-1])}, and {topic_names[-1]}"
 
 
-def _build_reason(pattern_topics: list[str], matched_topics: list[str], missing_index: int) -> str:
-    if missing_index == 0 or not matched_topics:
-        return f"{pattern_topics[0]} is the first step in this learning path."
-
-    previous_topics = pattern_topics[:missing_index]
-    covered_previous = [topic for topic in previous_topics if topic in matched_topics]
-    if missing_index == len(covered_previous):
-        return f"You already know {_format_topic_list(covered_previous)}."
-
-    previous_topic = pattern_topics[missing_index - 1]
-    return f"{previous_topic} is already in place, and this is the next step in the learning path."
-
-
-def _topic_coverage(topic_name: str, linked_item_counts: Counter[str], revisit_counts: Counter[str], related_topics: dict[str, set[str]]) -> dict[str, int | str]:
+def _topic_coverage(
+    topic_name: str,
+    linked_item_counts: Counter[str],
+    revisit_counts: Counter[str],
+    related_topics: dict[str, set[str]],
+) -> dict[str, int | str]:
     variants = _topic_name_variants(topic_name)
     linked_item_count = max([linked_item_counts.get(variant, 0) for variant in variants], default=0)
-    canonical_topic = next((variant for variant in variants if variant in related_topics), topic_name)
-    related_topic_count = len(related_topics.get(canonical_topic, set()))
-    revisit_count = max(0, linked_item_count - 1)
+    matching_related_names = [name for name in related_topics if name.lower() in variants]
+    related_topic_count = max([len(related_topics.get(name, set())) for name in matching_related_names], default=0)
+    revisit_count = max([revisit_counts.get(name, 0) for name in matching_related_names], default=0)
+    revisit_count = max(0, revisit_count - 1)
     coverage_score = linked_item_count * 2 + related_topic_count + revisit_count
 
     if linked_item_count == 0:
-        return {
-            "state": "missing",
-            "action": "add",
-            "linked_item_count": linked_item_count,
-            "related_topic_count": related_topic_count,
-            "revisit_count": revisit_count,
-            "coverage_score": coverage_score,
-        }
-
-    if linked_item_count >= 3 or coverage_score >= COVERED_COVERAGE_THRESHOLD:
-        return {
-            "state": "covered",
-            "action": "none",
-            "linked_item_count": linked_item_count,
-            "related_topic_count": related_topic_count,
-            "revisit_count": revisit_count,
-            "coverage_score": coverage_score,
-        }
+        state = "missing"
+        action = "add"
+    elif linked_item_count >= 3 or coverage_score >= COVERED_COVERAGE_THRESHOLD:
+        state = "covered"
+        action = "none"
+    else:
+        state = "started"
+        action = "focus"
 
     return {
-        "state": "started",
-        "action": "focus",
+        "state": state,
+        "action": action,
         "linked_item_count": linked_item_count,
         "related_topic_count": related_topic_count,
         "revisit_count": revisit_count,
@@ -169,7 +170,67 @@ def _topic_coverage(topic_name: str, linked_item_counts: Counter[str], revisit_c
     }
 
 
-def build_knowledge_gap_suggestions(db: Session, user_id: int) -> list[dict]:
+def _build_reason(pattern_topics: list[str], coverage_by_topic: dict[str, dict[str, int | str]], index: int) -> str:
+    topic_name = pattern_topics[index]
+    state = coverage_by_topic[topic_name]["state"]
+    prerequisites = pattern_topics[:index]
+    completed = [name for name in prerequisites if coverage_by_topic[name]["state"] in {"covered", "started"}]
+    missing = [name for name in prerequisites if coverage_by_topic[name]["state"] == "missing"]
+
+    if not prerequisites:
+        return f"{topic_name} is the first step in this learning path."
+
+    if state == "started":
+        if completed:
+            return f"You have already started {topic_name}. Build on {_format_topic_list(completed)} next."
+        return f"You have already started {topic_name}. Focus here next to strengthen this part of the learning path."
+
+    if not missing and completed:
+        return f"You already know {_format_topic_list(completed)}."
+
+    if len(missing) == 1 and missing[0] == prerequisites[-1]:
+        return f"{missing[0]} is the next step toward {topic_name}."
+
+    if completed and missing:
+        return f"You already know {_format_topic_list(completed)}. Build through {_format_topic_list(missing[:3])} before moving to {topic_name}."
+
+    return f"Build through {_format_topic_list(missing[:3])} before moving to {topic_name}."
+
+
+def _compute_confidence(pattern_topics: list[str], coverage_by_topic: dict[str, dict[str, int | str]], index: int, state: str) -> float:
+    prerequisites = pattern_topics[:index]
+    if not prerequisites:
+        base_confidence = 0.64
+    else:
+        covered_count = sum(1 for name in prerequisites if coverage_by_topic[name]["state"] == "covered")
+        started_count = sum(1 for name in prerequisites if coverage_by_topic[name]["state"] == "started")
+        completion_ratio = (covered_count + started_count * 0.6) / len(prerequisites)
+        queue_bonus = max(0.04, 0.22 - index * 0.02)
+        base_confidence = 0.48 + completion_ratio * 0.28 + queue_bonus
+
+    if state == "started":
+        base_confidence += 0.08
+
+    return round(min(0.98, base_confidence), 2)
+
+
+def _all_previous_ready(pattern_topics: list[str], coverage_by_topic: dict[str, dict[str, int | str]], index: int) -> bool:
+    return all(coverage_by_topic[name]["state"] != "missing" for name in pattern_topics[:index])
+
+
+def _frontier_index(pattern_topics: list[str], coverage_by_topic: dict[str, dict[str, int | str]]) -> int | None:
+    for index, topic_name in enumerate(pattern_topics):
+        if coverage_by_topic[topic_name]["state"] == "missing" and _all_previous_ready(pattern_topics, coverage_by_topic, index):
+            return index
+
+    for index, topic_name in enumerate(pattern_topics):
+        if coverage_by_topic[topic_name]["state"] == "started" and _all_previous_ready(pattern_topics, coverage_by_topic, index):
+            return index
+
+    return None
+
+
+def _collect_learning_candidates(db: Session, user_id: int) -> list[dict]:
     topic_rows = get_raw_topics_with_counts(db, user_id)
     items = db.scalars(
         select(KnowledgeItem)
@@ -177,74 +238,130 @@ def build_knowledge_gap_suggestions(db: Session, user_id: int) -> list[dict]:
         .where(KnowledgeItem.user_id == user_id)
         .order_by(desc(KnowledgeItem.updated_at))
     ).all()
+
     if not topic_rows and not items:
         return []
 
-    existing_topics, linked_item_counts, canonical_names = _normalize_topic_records(topic_rows)
+    existing_topics, linked_item_counts, _canonical_names = _normalize_topic_records(topic_rows)
     revisit_counts, related_topics = _build_topic_relationship_stats(items)
-    suggestions: list[dict] = []
+    candidates: list[dict] = []
 
-    for pattern in KNOWLEDGE_PATTERNS:
-        pattern_topics = pattern["topics"]
-        matched_topics: list[str] = []
-        coverage_by_topic: dict[str, dict[str, int | str]] = {}
+    for path in LEARNING_PATHS:
+        pattern_topics = path["topics"]
+        coverage_by_topic = {
+            topic_name: _topic_coverage(topic_name, linked_item_counts, revisit_counts, related_topics)
+            for topic_name in pattern_topics
+        }
+        active_count = sum(1 for topic_name in pattern_topics if coverage_by_topic[topic_name]["state"] != "missing")
+        if active_count < MIN_PATTERN_MATCHES:
+            continue
 
-        for topic_name in pattern_topics:
-            coverage = _topic_coverage(topic_name, linked_item_counts, revisit_counts, related_topics)
-            coverage_by_topic[topic_name] = coverage
-            if coverage["state"] == "covered":
-                matched_topics.append(canonical_names.get(topic_name.lower(), topic_name))
-
-        if len(matched_topics) < MIN_PATTERN_MATCHES:
+        frontier_index = _frontier_index(pattern_topics, coverage_by_topic)
+        if frontier_index is None:
             continue
 
         for index, topic_name in enumerate(pattern_topics):
             coverage = coverage_by_topic[topic_name]
             state = coverage["state"]
-            action = coverage["action"]
             if state == "covered":
                 continue
 
-            prerequisite_topics = pattern_topics[:index]
-            covered_prerequisites = [name for name in prerequisite_topics if coverage_by_topic[name]["state"] == "covered"]
-            started_prerequisites = [name for name in prerequisite_topics if coverage_by_topic[name]["state"] == "started"]
-
-            if prerequisite_topics and not covered_prerequisites and not started_prerequisites:
+            prerequisites = pattern_topics[:index]
+            missing_prereq_count = sum(1 for name in prerequisites if coverage_by_topic[name]["state"] == "missing")
+            if prerequisites and missing_prereq_count == len(prerequisites):
+                continue
+            if index < frontier_index and state != "started":
                 continue
 
-            completion_ratio = len(covered_prerequisites) / max(len(prerequisite_topics), 1) if prerequisite_topics else 0
-            progression_bonus = max(0, len(prerequisite_topics) - index * 0.1)
-            confidence = round(min(0.98, 0.42 + completion_ratio * 0.3 + progression_bonus * 0.05), 2)
-            if state == "started":
-                confidence = max(confidence, 0.76)
+            if index > frontier_index and missing_prereq_count > 0:
+                queue_stage = 1 + missing_prereq_count
+            elif index < frontier_index:
+                queue_stage = 4
+            elif index == frontier_index:
+                queue_stage = 0
+            else:
+                queue_stage = 1
 
-            suggestions.append(
+            future_distance = max(0, index - frontier_index)
+            state_priority = 1 if state == "started" and index < frontier_index else 0
+
+            candidates.append(
                 {
-                    "suggested_topic": topic_name,
-                    "reason": _build_reason(pattern_topics, covered_prerequisites + started_prerequisites, index),
-                    "confidence": confidence,
-                    "domain": pattern["domain"],
-                    "topic_exists": any(variant in existing_topics for variant in _topic_name_variants(topic_name)),
+                    "topic": topic_name,
+                    "reason": _build_reason(pattern_topics, coverage_by_topic, index),
+                    "confidence": _compute_confidence(pattern_topics, coverage_by_topic, index, state),
+                    "domain": path["domain"],
                     "state": state,
-                    "action": action,
-                    "_order": index,
-                    "_domain_priority": 0 if pattern["domain"] == "AI" else 1,
+                    "action": coverage["action"],
+                    "topic_exists": any(variant in existing_topics for variant in _topic_name_variants(topic_name)),
+                    "missing_prereq_count": missing_prereq_count,
+                    "stack_index": index,
+                    "frontier_index": frontier_index,
+                    "queue_stage": queue_stage,
+                    "future_distance": future_distance,
+                    "state_priority": state_priority,
+                    "domain_priority": DOMAIN_PRIORITY.get(path["domain"], 9),
+                    "active_count": active_count,
                 }
             )
 
     deduped: dict[str, dict] = {}
-    for suggestion in suggestions:
-        existing = deduped.get(suggestion["suggested_topic"])
-        if existing is None or (suggestion["_order"], -suggestion["confidence"]) < (existing["_order"], -existing["confidence"]):
-            deduped[suggestion["suggested_topic"]] = suggestion
+    for candidate in candidates:
+        existing = deduped.get(candidate["topic"].lower())
+        candidate_rank = (
+            candidate["queue_stage"],
+            candidate["future_distance"],
+            candidate["missing_prereq_count"],
+            candidate["state_priority"],
+            -candidate["confidence"],
+            candidate["domain_priority"],
+            -candidate["active_count"],
+        )
+        if existing is None:
+            deduped[candidate["topic"].lower()] = {**candidate, "_rank": candidate_rank}
+            continue
+
+        if candidate_rank < existing["_rank"]:
+            deduped[candidate["topic"].lower()] = {**candidate, "_rank": candidate_rank}
 
     ranked = sorted(
         deduped.values(),
-        key=lambda item: (item["_order"], -item["confidence"], item["_domain_priority"], item["suggested_topic"].lower()),
+        key=lambda item: (
+            item["queue_stage"],
+            item["future_distance"],
+            item["missing_prereq_count"],
+            item["state_priority"],
+            -item["confidence"],
+            item["domain_priority"],
+            -item["active_count"],
+            item["topic"].lower(),
+        ),
     )
+    return ranked
+
+
+def get_next_learning_topics(db: Session, user_id: int, limit: int = DEFAULT_NEXT_LIMIT) -> list[dict]:
+    ranked = _collect_learning_candidates(db, user_id)
     return [
         {
-            "suggested_topic": item["suggested_topic"],
+            "topic": item["topic"],
+            "reason": item["reason"],
+            "confidence": item["confidence"],
+            "domain": item["domain"],
+            "state": item["state"],
+            "action": item["action"],
+            "priority": index + 1,
+            "topic_exists": item["topic_exists"],
+        }
+        for index, item in enumerate(ranked[:limit])
+    ]
+
+
+def build_knowledge_gap_suggestions(db: Session, user_id: int) -> list[dict]:
+    ranked = _collect_learning_candidates(db, user_id)
+    return [
+        {
+            "suggested_topic": item["topic"],
             "reason": item["reason"],
             "confidence": item["confidence"],
             "domain": item["domain"],

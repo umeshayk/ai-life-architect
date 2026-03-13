@@ -15,6 +15,18 @@ const GROUP_COLORS = {
   General: "#9ca3af"
 };
 
+const DOMAIN_ICON_STYLES = {
+  AI: { background: "#dbeafe", color: "#1d4ed8" },
+  Agriculture: { background: "#dcfce7", color: "#15803d" },
+  Bridge: { background: "#ccfbf1", color: "#0f766e" },
+  Math: { background: "#f3e8ff", color: "#7e22ce" },
+  Mathematics: { background: "#f3e8ff", color: "#7e22ce" },
+  Business: { background: "#ffedd5", color: "#c2410c" },
+  Knowledge: { background: "#ffedd5", color: "#ea580c" },
+  Spiritual: { background: "#cffafe", color: "#0e7490" },
+  General: { background: "#e2e8f0", color: "#475569" }
+};
+
 const DOMAIN_ANCHORS = {
   AI: { x: 0.22, y: 0.42 },
   Agriculture: { x: 0.52, y: 0.22 },
@@ -233,6 +245,99 @@ function levelSummary(level, domain, topic) {
   return `Level 4: saved knowledge items for ${topic || "this topic"}`;
 }
 
+
+function DomainTopicIcon({ domain }) {
+  const style = DOMAIN_ICON_STYLES[domain] || DOMAIN_ICON_STYLES.General;
+
+  if (domain === "AI") {
+    return (
+      <span className="domain-topic-icon" style={style} aria-hidden="true">
+        <svg viewBox="0 0 16 16" className="domain-topic-svg">
+          <rect x="3" y="4" width="10" height="8" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+          <path d="M6 2.5v2M10 2.5v2M5 7h.01M11 7h.01M6 10h4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (domain === "Agriculture") {
+    return (
+      <span className="domain-topic-icon" style={style} aria-hidden="true">
+        <svg viewBox="0 0 16 16" className="domain-topic-svg">
+          <path d="M8 13V8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          <path d="M8 8c0-2.6 2-4.2 4.5-4.5-.3 2.5-1.9 4.5-4.5 4.5Z" fill="currentColor" opacity="0.9" />
+          <path d="M8 9c0-2.1-1.6-3.4-3.8-3.7.2 2.1 1.6 3.7 3.8 3.7Z" fill="currentColor" opacity="0.65" />
+          <path d="M5.5 13h5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (domain === "Knowledge") {
+    return (
+      <span className="domain-topic-icon" style={style} aria-hidden="true">
+        <svg viewBox="0 0 16 16" className="domain-topic-svg">
+          <path d="M4 3.5h6.5A1.5 1.5 0 0 1 12 5v7H5.5A1.5 1.5 0 0 0 4 13.5v-10Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+          <path d="M4 12.5A1.5 1.5 0 0 1 5.5 11H12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (domain === "Business") {
+    return (
+      <span className="domain-topic-icon" style={style} aria-hidden="true">
+        <svg viewBox="0 0 16 16" className="domain-topic-svg">
+          <rect x="3" y="5" width="10" height="7.5" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M6 5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (domain === "Math" || domain === "Mathematics") {
+    return (
+      <span className="domain-topic-icon" style={style} aria-hidden="true">
+        <svg viewBox="0 0 16 16" className="domain-topic-svg">
+          <rect x="4" y="2.5" width="8" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M6 5.5h4M6 8h4M6 10.5h4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (domain === "Spiritual") {
+    return (
+      <span className="domain-topic-icon" style={style} aria-hidden="true">
+        <svg viewBox="0 0 16 16" className="domain-topic-svg">
+          <path d="M8 2.5c1.8 2 2.7 3.3 2.7 4.7A2.7 2.7 0 1 1 5.3 7.2C5.3 5.8 6.2 4.5 8 2.5Z" fill="currentColor" opacity="0.85" />
+          <path d="M8 9.5v3M6 12.5h4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (domain === "Bridge") {
+    return (
+      <span className="domain-topic-icon" style={style} aria-hidden="true">
+        <svg viewBox="0 0 16 16" className="domain-topic-svg">
+          <path d="M3 11h10M4 11V8.5a4 4 0 0 1 8 0V11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M6 11V9.5M8 11V9.5M10 11V9.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  return (
+    <span className="domain-topic-icon" style={style} aria-hidden="true">
+      <svg viewBox="0 0 16 16" className="domain-topic-svg">
+        <circle cx="8" cy="8" r="3.5" fill="currentColor" opacity="0.2" />
+        <path d="M8 3.5v9M3.5 8h9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
 export default function BrainMap() {
   const navigate = useNavigate();
   const fgRef = useRef(null);
@@ -254,12 +359,12 @@ export default function BrainMap() {
 
   useEffect(() => {
     api
-      .get("/api/knowledge-suggestions")
+      .get("/api/next-learning-topics")
       .then((response) => {
         setSuggestions(response.data || []);
         setSuggestionsError("");
       })
-      .catch((err) => setSuggestionsError(err.response?.data?.detail || "Unable to load suggested topics."));
+      .catch((err) => setSuggestionsError(err.response?.data?.detail || "Unable to load next learning topics."));
   }, []);
 
   useEffect(() => {
@@ -591,8 +696,11 @@ export default function BrainMap() {
     openContext({ level: 3, domain: currentDomain || selectedNode?.group || "", topic: label });
   };
 
+  const getSuggestionLabel = (suggestion) => suggestion.topic || suggestion.suggested_topic;
+
   const handleSuggestedTopicClick = (suggestion) => {
-    const existingNode = graphWithDegree.nodes.find((node) => node.label.toLowerCase() === suggestion.suggested_topic.toLowerCase());
+    const suggestionLabel = getSuggestionLabel(suggestion);
+    const existingNode = graphWithDegree.nodes.find((node) => node.label.toLowerCase() === suggestionLabel.toLowerCase());
     if (existingNode) {
       if (existingNode.type === "domain") {
         openContext({ level: 2, domain: existingNode.label });
@@ -601,7 +709,7 @@ export default function BrainMap() {
       openContext({ level: 3, domain: suggestion.domain || existingNode.group || currentDomain, topic: existingNode.label });
       return;
     }
-    navigate(`/knowledge?topic=${encodeURIComponent(suggestion.suggested_topic)}`);
+    navigate(`/knowledge?topic=${encodeURIComponent(suggestionLabel)}`);
   };
 
   const handleSuggestionAction = (suggestion) => {
@@ -609,7 +717,7 @@ export default function BrainMap() {
       handleSuggestedTopicClick(suggestion);
       return;
     }
-    navigate(`/knowledge?topic=${encodeURIComponent(suggestion.suggested_topic)}`);
+    navigate(`/knowledge?topic=${encodeURIComponent(getSuggestionLabel(suggestion))}`);
   };
 
   return (
@@ -794,23 +902,27 @@ export default function BrainMap() {
 
         <aside className="brain-map-side-column">
           <section className="card brain-side-card">
-            <h3>Suggested Topics</h3>
-            <p className="muted">Suggested learning path</p>
+            <h3>Next 5 Things You Should Learn</h3>
+            <p className="muted">Based on your current knowledge graph, these are the next best topics to learn.</p>
             {suggestionsError && <p className="error-text">{suggestionsError}</p>}
             {!suggestionsError && suggestions.length === 0 ? (
-          <p className="muted">No strong topic gaps detected yet. Keep adding knowledge to unlock suggestions.</p>
+          <p className="muted">No strong next-step topics detected yet. Keep adding knowledge to unlock your learning queue.</p>
         ) : (
               <div className="stack compact">
                 {suggestions.map((suggestion) => (
-                  <article key={suggestion.suggested_topic} className="result-item suggestion-card">
-                <div className="row-between">
-                  <button
-                    type="button"
-                    className="link-button related-note-button"
-                    onClick={() => handleSuggestedTopicClick(suggestion)}
-                  >
-                    {suggestion.suggested_topic}
-                  </button>
+                  <article key={getSuggestionLabel(suggestion)} className="result-item suggestion-card">
+                <div className="row-between suggestion-card-header">
+                  <div>
+                    <p className="source-meta suggestion-priority">{suggestion.priority}. Next up</p>
+                    <button
+                      type="button"
+                      className="link-button related-note-button suggestion-topic-link"
+                      onClick={() => handleSuggestedTopicClick(suggestion)}
+                    >
+                      <DomainTopicIcon domain={suggestion.domain} />
+                      <span>{getSuggestionLabel(suggestion)}</span>
+                    </button>
+                  </div>
                   <span className="tag">{suggestion.domain}</span>
                 </div>
                 <p className="muted">{suggestion.reason}</p>

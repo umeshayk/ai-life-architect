@@ -386,6 +386,29 @@ select {
   flex-shrink: 0;
 }
 
+
+.suggestion-topic-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.domain-topic-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.domain-topic-svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: block;
+}
+
 .suggestion-action-button {
   display: inline-flex;
   align-items: center;

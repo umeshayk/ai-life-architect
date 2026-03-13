@@ -49,7 +49,6 @@ class TopicDetailResponse(BaseModel):
     related_topics: list[str]
 
 
-
 class KnowledgeSuggestion(BaseModel):
     suggested_topic: str
     reason: str
@@ -58,3 +57,14 @@ class KnowledgeSuggestion(BaseModel):
     topic_exists: bool = False
     state: str = "missing"
     action: str = "add"
+
+
+class NextLearningTopic(BaseModel):
+    topic: str
+    reason: str
+    confidence: float
+    domain: str
+    state: str = "missing"
+    action: str = "add"
+    priority: int
+    topic_exists: bool = False

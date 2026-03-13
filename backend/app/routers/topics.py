@@ -13,6 +13,7 @@ from app.routers.auth import get_current_user
 from app.routers.knowledge import serialize_knowledge
 from app.schemas.topic import (
     KnowledgeSuggestion,
+    NextLearningTopic,
     TopicCleanupResponse,
     TopicDetailResponse,
     TopicItemsResponse,
@@ -20,7 +21,7 @@ from app.schemas.topic import (
     TopicRebuildResponse,
     TopicSummary,
 )
-from app.services.knowledge_gap_service import build_knowledge_gap_suggestions
+from app.services.knowledge_gap_service import build_knowledge_gap_suggestions, get_next_learning_topics
 from app.services.retrieval import _extract_item_concepts
 from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
 
@@ -42,6 +43,12 @@ def _build_topic_note_summary(item: KnowledgeItem) -> TopicNoteSummary:
 def get_knowledge_suggestions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     suggestions = build_knowledge_gap_suggestions(db, current_user.id)
     return [KnowledgeSuggestion(**suggestion) for suggestion in suggestions]
+
+
+@router.get("/api/next-learning-topics", response_model=list[NextLearningTopic])
+def get_next_learning_queue(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    topics = get_next_learning_topics(db, current_user.id)
+    return [NextLearningTopic(**topic) for topic in topics]
 
 
 @router.get("/api/topics", response_model=list[TopicSummary])
