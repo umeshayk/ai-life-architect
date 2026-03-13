@@ -59,16 +59,16 @@ export default function Dashboard({ user }) {
       <section className="card">
         <h3>Top Tags</h3>
         <div className="tag-list">
-          {(insights?.top_tags || []).map((tag) => (
-            <span key={tag} className="tag">{tag}</span>
+          {(insights?.top_tags || []).map((tag, index) => (
+            <span key={`${index}-${tag}`} className="tag">{tag}</span>
           ))}
         </div>
       </section>
       <section className="card">
         <h3>Recent Titles</h3>
         <ul className="simple-list">
-          {(insights?.recent_titles || []).map((title) => (
-            <li key={title}>{title}</li>
+          {(insights?.recent_titles || []).map((title, index) => (
+            <li key={`${index}-${title}`}>{title}</li>
           ))}
         </ul>
       </section>
