@@ -542,6 +542,17 @@ export default function BrainMap() {
   }, [graphWithDegree.nodes, search]);
 
   const selectedNode = graphWithDegree.nodes.find((node) => node.id === selectedNodeId) || null;
+  const shouldShowSearchMatches = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const activeTopicLabel = (currentTopic || graph.topic || selectedNode?.label || "").trim().toLowerCase();
+    if (!query || !searchMatches.length) {
+      return false;
+    }
+    if (activeTopicLabel && query === activeTopicLabel) {
+      return false;
+    }
+    return true;
+  }, [currentTopic, graph.topic, search, searchMatches.length, selectedNode?.label]);
   const selectedGroup = selectedNode?.group || graph.domain || null;
   const availableGroups = useMemo(() => {
     const groups = new Set(filteredData.nodes.map((node) => node.group));
@@ -912,7 +923,7 @@ export default function BrainMap() {
         </div>
         <p className="muted">{levelSummary(graph.level || currentLevel, graph.domain || currentDomain, graph.topic || currentTopic)}</p>
         {isSearching && <p className="muted">Finding the best topic match and loading its related graph...</p>}
-        {!!searchMatches.length && !isSearching && (
+        {shouldShowSearchMatches && !isSearching && (
           <div className="brain-map-search-results">
             {searchMatches.map((match) => (
               <button
