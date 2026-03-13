@@ -53,8 +53,10 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
     pair_counts: Counter[tuple[str, str]] = Counter()
     topic_to_titles: dict[str, list[str]] = defaultdict(list)
     recent_topic_names: list[str] = []
+    recency_weights: Counter[str] = Counter()
 
-    for item in items:
+    total_items = max(len(items), 1)
+    for index, item in enumerate(items):
         topic_names = sorted(
             {
                 content_topic.topic.name
@@ -70,6 +72,7 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
             topic_to_titles[topic_name].append(item.title)
             if topic_name not in recent_topic_names:
                 recent_topic_names.append(topic_name)
+            recency_weights[topic_name] += round(max(0.2, 1.4 - (index / total_items) * 1.1), 2)
 
         for left, right in combinations(topic_names, 2):
             pair_counts[(left, right)] += 1
@@ -84,19 +87,6 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
     top_topic_set = set(top_topic_names)
     if not top_topic_names:
         return GraphResponse(nodes=[], edges=[])
-
-    nodes = [
-        GraphNode(
-            id=topic_name,
-            label=topic_name,
-            type="topic",
-            group=_topic_group(topic_name),
-            size=10 + min(18, topic_counts[topic_name] * 2.2),
-            linked_titles=topic_to_titles[topic_name][:12],
-            linked_count=topic_counts[topic_name],
-        )
-        for topic_name in top_topic_names
-    ]
 
     edges = [
         GraphEdge(
@@ -115,11 +105,41 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
         _topic_group,
     )
 
+    connection_counts: Counter[str] = Counter()
+    for edge in edges + hierarchy_edges:
+        connection_counts[edge.source] += 1
+        connection_counts[edge.target] += 1
+
+    nodes = [
+        GraphNode(
+            id=topic_name,
+            label=topic_name,
+            type="topic",
+            group=_topic_group(topic_name),
+            size=0,
+            importance=round(topic_counts[topic_name] * 2 + connection_counts[topic_name] + recency_weights[topic_name], 2),
+            connection_count=connection_counts[topic_name],
+            linked_titles=topic_to_titles[topic_name][:12],
+            linked_count=topic_counts[topic_name],
+        )
+        for topic_name in top_topic_names
+    ]
+
     existing_node_ids = {node.id for node in nodes}
     for node in hierarchy_nodes:
         if node.id not in existing_node_ids:
+            hierarchy_importance = round(
+                node.linked_count * 2 + connection_counts[node.id] + max(0.5, node.linked_count * 0.2),
+                2,
+            )
+            node.importance = hierarchy_importance
+            node.connection_count = connection_counts[node.id]
+            node.size = 0
             nodes.append(node)
             existing_node_ids.add(node.id)
     edges.extend(hierarchy_edges)
+
+    for node in nodes:
+        node.size = 4 + min(28, node.importance * 2)
 
     return GraphResponse(nodes=nodes, edges=edges)

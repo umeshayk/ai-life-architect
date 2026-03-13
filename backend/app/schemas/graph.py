@@ -7,6 +7,8 @@ class GraphNode(BaseModel):
     type: str
     group: str
     size: float
+    importance: float = 0.0
+    connection_count: int = 0
     summary: str | None = None
     content_type: str | None = None
     tags: list[str] = Field(default_factory=list)

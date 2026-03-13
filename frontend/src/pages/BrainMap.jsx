@@ -14,30 +14,50 @@ const GROUP_COLORS = {
   General: "#9ca3af"
 };
 
-function graphColor(group) {
-  return GROUP_COLORS[group] || GROUP_COLORS.General;
+const DOMAIN_ANCHORS = {
+  AI: { x: 0.22, y: 0.42 },
+  Agriculture: { x: 0.52, y: 0.22 },
+  Math: { x: 0.52, y: 0.82 },
+  Mathematics: { x: 0.52, y: 0.82 },
+  Business: { x: 0.8, y: 0.45 },
+  Knowledge: { x: 0.36, y: 0.54 },
+  Spiritual: { x: 0.78, y: 0.8 },
+  General: { x: 0.64, y: 0.28 }
+};
+
+function hexToRgb(hex) {
+  const normalized = hex.replace("#", "");
+  const value = normalized.length === 3
+    ? normalized.split("").map((char) => char + char).join("")
+    : normalized;
+  const integer = Number.parseInt(value, 16);
+  return {
+    r: (integer >> 16) & 255,
+    g: (integer >> 8) & 255,
+    b: integer & 255
+  };
+}
+
+function graphColor(group, importance = 0, dimmed = false) {
+  const base = GROUP_COLORS[group] || GROUP_COLORS.General;
+  const { r, g, b } = hexToRgb(base);
+  const alpha = dimmed ? 0.14 : importance > 8 ? 1 : importance > 4 ? 0.78 : 0.45;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function createClusterAnchors(groups, width, height) {
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const radius = Math.min(width, height) * 0.28;
   const sortedGroups = [...groups].sort();
-
-  if (!sortedGroups.length) {
-    return new Map();
-  }
-
   return new Map(
     sortedGroups.map((group, index) => {
-      const angle = (2 * Math.PI * index) / sortedGroups.length - Math.PI / 2;
-      return [
-        group,
-        {
-          x: centerX + radius * Math.cos(angle),
-          y: centerY + radius * Math.sin(angle)
-        }
-      ];
+      const fallbackAngle = (2 * Math.PI * index) / Math.max(sortedGroups.length, 1) - Math.PI / 2;
+      const fallback = {
+        x: width / 2 + Math.min(width, height) * 0.22 * Math.cos(fallbackAngle),
+        y: height / 2 + Math.min(width, height) * 0.22 * Math.sin(fallbackAngle)
+      };
+      const anchor = DOMAIN_ANCHORS[group]
+        ? { x: width * DOMAIN_ANCHORS[group].x, y: height * DOMAIN_ANCHORS[group].y }
+        : fallback;
+      return [group, anchor];
     })
   );
 }
@@ -64,8 +84,37 @@ function createClusterForce(axis, anchorMap, width, height) {
   return force;
 }
 
+function createLeaderForce(axis, leaderMap) {
+  let nodes = [];
+
+  const force = (alpha) => {
+    const strength = 0.16 * alpha;
+    nodes.forEach((node) => {
+      const leader = leaderMap.get(node.group);
+      if (!leader || leader.id === node.id) {
+        return;
+      }
+      if (axis === "x") {
+        node.vx += ((leader.x || 0) - node.x) * strength;
+      } else {
+        node.vy += ((leader.y || 0) - node.y) * strength;
+      }
+    });
+  };
+
+  force.initialize = (nextNodes) => {
+    nodes = nextNodes || [];
+  };
+
+  return force;
+}
+
 function nodeRadius(node) {
-  return Math.min(28, 4 + (node.degree || 0) * 2);
+  const importance = node.importance || 0;
+  if (importance < 1) {
+    return 2;
+  }
+  return Math.min(34, 4 + importance * 2);
 }
 
 export default function BrainMap() {
@@ -158,6 +207,16 @@ export default function BrainMap() {
     () => createClusterAnchors(new Set(filteredData.nodes.map((node) => node.group)), graphSize.width, graphSize.height),
     [filteredData.nodes, graphSize]
   );
+  const groupLeaders = useMemo(() => {
+    const leaders = new Map();
+    filteredData.nodes.forEach((node) => {
+      const existing = leaders.get(node.group);
+      if (!existing || (node.importance || 0) > (existing.importance || 0)) {
+        leaders.set(node.group, node);
+      }
+    });
+    return leaders;
+  }, [filteredData.nodes]);
   const focusContext = useMemo(() => {
     if (!selectedNodeId) {
       return { neighborIds: new Set(), connectedEdges: new Set(), connectedLabels: [] };
@@ -197,9 +256,11 @@ export default function BrainMap() {
     graphApi.d3Force("center").strength(0.3);
     graphApi.d3Force("cluster-x", createClusterForce("x", clusterAnchors, graphSize.width, graphSize.height));
     graphApi.d3Force("cluster-y", createClusterForce("y", clusterAnchors, graphSize.width, graphSize.height));
+    graphApi.d3Force("leader-x", createLeaderForce("x", groupLeaders));
+    graphApi.d3Force("leader-y", createLeaderForce("y", groupLeaders));
     graphApi.d3Force("collision", null);
     graphApi.d3ReheatSimulation();
-  }, [filteredData, graphSize, clusterAnchors]);
+  }, [filteredData, graphSize, clusterAnchors, groupLeaders]);
 
   const focusNode = (nodeId) => {
     setSelectedNodeId(nodeId);
@@ -347,10 +408,13 @@ export default function BrainMap() {
               }}
               nodeLabel={(node) => `${node.label} (${node.group || "General"})`}
               nodeColor={(node) => {
-                if (!selectedNodeId) {
-                  return graphColor(node.group);
+                if ((node.importance || 0) < 1) {
+                  return "rgba(203, 213, 225, 0.12)";
                 }
-                return focusContext.neighborIds.has(node.id) ? graphColor(node.group) : "rgba(203, 213, 225, 0.14)";
+                if (!selectedNodeId) {
+                  return graphColor(node.group, node.importance || 0, false);
+                }
+                return graphColor(node.group, node.importance || 0, !focusContext.neighborIds.has(node.id));
               }}
               enableNodeDrag={true}
               onNodeHover={(node) => setHoveredNodeId(node?.id || null)}
@@ -362,12 +426,12 @@ export default function BrainMap() {
                 const isSelected = selectedNodeId === node.id;
                 const isNeighbor = focusContext.neighborIds.has(node.id);
                 const isDimmed = selectedNodeId && !isNeighbor;
-                const showLabel = isSelected || hoveredNodeId === node.id || (node.degree || 0) >= 2;
+                const showLabel = isSelected || hoveredNodeId === node.id || (node.importance || 0) >= 5;
 
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
-                ctx.globalAlpha = isDimmed ? 0.2 : 1;
-                ctx.fillStyle = graphColor(node.group);
+                ctx.globalAlpha = isDimmed ? 0.22 : 1;
+                ctx.fillStyle = graphColor(node.group, node.importance || 0, false);
                 ctx.fill();
                 ctx.globalAlpha = 1;
 
