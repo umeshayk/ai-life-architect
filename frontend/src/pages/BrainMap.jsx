@@ -293,6 +293,36 @@ export default function BrainMap() {
     return () => window.removeEventListener("resize", updateSize);
   }, []);
 
+  useEffect(() => {
+    if (selectedNodeId || !graph.nodes.length) {
+      return;
+    }
+
+    const preferredLabel = currentTopic || graph.topic || "";
+    if (preferredLabel) {
+      const matchingNode = graph.nodes.find((node) => node.label === preferredLabel);
+      if (matchingNode) {
+        setSelectedNodeId(matchingNode.id);
+        return;
+      }
+    }
+
+    if ((graph.level || currentLevel) === 1) {
+      return;
+    }
+
+    if (currentDomain || graph.domain) {
+      const domainGroup = currentDomain || graph.domain;
+      const leadNode = [...graph.nodes]
+        .filter((node) => node.group === domainGroup || node.label === domainGroup)
+        .sort((left, right) => (right.importance || 0) - (left.importance || 0))[0];
+      if (leadNode) {
+        setSelectedNodeId(leadNode.id);
+      }
+    }
+  }, [currentDomain, currentLevel, currentTopic, graph, selectedNodeId]);
+
+
   const graphWithDegree = useMemo(() => {
     const nodeDegree = {};
     graph.edges.forEach((edge) => {
@@ -448,7 +478,7 @@ export default function BrainMap() {
     lastSearchFocusRef.current = "";
   };
 
-  const handleNodeAction = (node) => {
+  const drillIntoNode = (node) => {
     if (!node) {
       return;
     }
@@ -465,6 +495,19 @@ export default function BrainMap() {
 
     if (currentLevel === 3 && (node.type === "topic" || node.type === "bridge")) {
       openContext({ level: 4, domain: currentDomain || node.group, topic: node.label });
+      return;
+    }
+
+    focusNode(node.id);
+  };
+
+  const handleNodeAction = (node) => {
+    if (!node) {
+      return;
+    }
+
+    if (selectedNodeId === node.id) {
+      drillIntoNode(node);
       return;
     }
 
@@ -826,12 +869,21 @@ export default function BrainMap() {
             )}
             <p className="source-meta">
               Suggested next step: {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge")
-                ? "Click again or use the graph to zoom deeper."
+                ? "Click the selected node again or use Zoom Deeper."
                 : focusContext.connectedLabels[0]
                   ? `Explore ${focusContext.connectedLabels[0]}`
                   : "Open this item to review it in full."}
             </p>
             <div className="brain-detail-actions">
+              {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge") && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => drillIntoNode(selectedNode)}
+                >
+                  Zoom Deeper
+                </button>
+              )}
               {(selectedNode.type === "topic" || selectedNode.type === "bridge") && (
                 <button
                   type="button"
