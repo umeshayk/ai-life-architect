@@ -437,6 +437,7 @@ select {
 }
 
 .brain-map-canvas {
+  position: relative;
   border: 1px solid #dbeafe;
   border-radius: 16px;
   background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
@@ -453,6 +454,42 @@ select {
 
 .force-graph-shell canvas {
   display: block;
+}
+
+.brain-map-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.brain-map-cluster-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  pointer-events: auto;
+}
+
+.brain-map-cluster-label.active {
+  background: rgba(219, 234, 254, 0.96);
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.14);
+}
+
+.brain-map-cluster-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
 }
 
 .brain-map-svg {

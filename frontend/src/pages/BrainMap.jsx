@@ -45,6 +45,16 @@ function graphColor(group, importance = 0, dimmed = false) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function clusterDisplayLabel(group, leader) {
+  if (group === "Business" && leader?.label && /property|real estate/i.test(leader.label)) {
+    return "REAL ESTATE";
+  }
+  if (group === "Math" || group === "Mathematics") {
+    return "MATHEMATICS";
+  }
+  return String(group || "General").toUpperCase();
+}
+
 function createClusterAnchors(groups, width, height) {
   const sortedGroups = [...groups].sort();
   return new Map(
@@ -66,7 +76,7 @@ function createClusterForce(axis, anchorMap, width, height) {
   let nodes = [];
 
   const force = (alpha) => {
-    const strength = 0.22 * alpha;
+    const strength = 0.3 * alpha;
     nodes.forEach((node) => {
       const anchor = anchorMap.get(node.group) || { x: width / 2, y: height / 2 };
       if (axis === "x") {
@@ -88,7 +98,7 @@ function createLeaderForce(axis, leaderMap) {
   let nodes = [];
 
   const force = (alpha) => {
-    const strength = 0.16 * alpha;
+    const strength = 0.22 * alpha;
     nodes.forEach((node) => {
       const leader = leaderMap.get(node.group);
       if (!leader || leader.id === node.id) {
@@ -243,6 +253,24 @@ export default function BrainMap() {
 
     return { neighborIds, connectedEdges, connectedLabels: Array.from(connectedLabelSet) };
   }, [filteredData, selectedNodeId]);
+  const clusterLabels = useMemo(
+    () =>
+      availableGroups
+        .filter(({ hasNodes }) => hasNodes)
+        .map(({ group, color }) => {
+          const anchor = clusterAnchors.get(group) || { x: graphSize.width / 2, y: graphSize.height / 2 };
+          const leader = groupLeaders.get(group) || null;
+          return {
+            group,
+            color,
+            label: clusterDisplayLabel(group, leader),
+            x: anchor.x,
+            y: Math.max(36, anchor.y - 74),
+            leader
+          };
+        }),
+    [availableGroups, clusterAnchors, graphSize, groupLeaders]
+  );
 
   useEffect(() => {
     if (!fgRef.current || !filteredData.nodes.length) {
@@ -301,7 +329,7 @@ export default function BrainMap() {
   const focusGroup = (group) => {
     const candidate = [...filteredData.nodes]
       .filter((node) => node.group === group)
-      .sort((left, right) => (right.degree || 0) - (left.degree || 0))[0];
+      .sort((left, right) => (right.importance || 0) - (left.importance || 0))[0];
     if (!candidate) {
       return;
     }
@@ -373,6 +401,29 @@ export default function BrainMap() {
           <p className="muted">No graph data available yet. Add more topic-linked knowledge first.</p>
         ) : (
           <div ref={shellRef} className="brain-map-canvas force-graph-shell">
+            <div className="brain-map-overlay">
+              {clusterLabels.map((cluster) => (
+                <button
+                  key={cluster.group}
+                  type="button"
+                  className={`brain-map-cluster-label ${selectedGroup === cluster.group ? "active" : ""}`}
+                  style={{
+                    left: `${cluster.x}px`,
+                    top: `${cluster.y}px`,
+                    borderColor: cluster.color,
+                    color: cluster.color
+                  }}
+                  onClick={() => focusGroup(cluster.group)}
+                  title={cluster.leader ? `Focus ${cluster.label} around ${cluster.leader.label}` : `Focus ${cluster.label}`}
+                >
+                  <span
+                    className="brain-map-cluster-dot"
+                    style={{ backgroundColor: cluster.color }}
+                  />
+                  {cluster.label}
+                </button>
+              ))}
+            </div>
             <ForceGraph2D
               ref={fgRef}
               width={graphSize.width}
