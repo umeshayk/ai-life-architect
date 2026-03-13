@@ -47,18 +47,23 @@ function getStarterPrompts(topic) {
 
 function buildStarterDraft(topic, prompt) {
   return {
-    title: `${topic} - ${prompt.replace(/\?$/, "")}`,
+    title: `${topic} - ${prompt}`,
     content: `Topic: ${topic}
 
 Question:
 ${prompt}
 
 Notes:
-- Definition:
-- Key concepts:
-- Example:
-- Why it matters:
-- Related topics:
+
+Definition:
+
+Key Concepts:
+
+Example:
+
+Why it matters:
+
+Related topics:
 `
   };
 }
@@ -200,7 +205,7 @@ export default function Knowledge() {
       content: draft.content,
       source_url: ""
     });
-    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     window.setTimeout(() => {
       contentRef.current?.focus();
       contentRef.current?.setSelectionRange(contentRef.current.value.length, contentRef.current.value.length);
