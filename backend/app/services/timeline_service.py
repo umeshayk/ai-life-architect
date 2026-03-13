@@ -10,6 +10,7 @@ from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.schemas.evolution import EvolutionResponse, EvolutionSeries
 from app.services.forecast_service import build_knowledge_forecast
+from app.services.topic_service import build_stable_topic_counts
 from app.schemas.timeline import (
     KnowledgeGrowthPoint,
     KnowledgeGrowthResponse,
@@ -109,7 +110,7 @@ def get_timeline(db: Session, user_id: int, range_key: str = "30d", group_by: st
     items = _load_items(db, user_id, normalized_range)
     all_items = _load_items(db, user_id, "all")
 
-    topic_counts: Counter[str] = Counter()
+    topic_names_in_range: list[str] = []
     groups_map: dict[str, list[TimelineItem]] = defaultdict(list)
 
     for item in items:
@@ -117,7 +118,7 @@ def get_timeline(db: Session, user_id: int, range_key: str = "30d", group_by: st
         bucket_key = _bucket_key(item.created_at, normalized_group)
         groups_map[bucket_key].append(serialized_item)
         for topic_name in serialized_item.topics:
-            topic_counts[topic_name] += 1
+            topic_names_in_range.append(topic_name)
 
     groups = []
     for date_key, bucket_items in sorted(groups_map.items(), reverse=True):
@@ -130,6 +131,7 @@ def get_timeline(db: Session, user_id: int, range_key: str = "30d", group_by: st
             )
         )
 
+    topic_counts = build_stable_topic_counts(topic_names_in_range)
     top_topics = [
         TimelineTopicCount(name=name, count=count)
         for name, count in topic_counts.most_common(8)

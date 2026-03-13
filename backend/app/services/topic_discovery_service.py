@@ -1,5 +1,5 @@
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
@@ -340,9 +340,9 @@ def _extract_candidate_scores(item: KnowledgeItem) -> Counter[str]:
         (content_excerpt, 0.55),
     ]
 
-    normalized_text = _normalize_words(combined_text)
+    normalized_tokens = set(_normalize_words(combined_text).split())
     for label, terms in DISCOVERY_PATTERNS:
-        if all(term in normalized_text.split() for term in terms):
+        if all(term in normalized_tokens for term in terms):
             scores[label] += 2.8 if len(terms) > 1 else 1.8
 
     for text, weight in sources:
@@ -381,79 +381,85 @@ def _fallback_topics(item: KnowledgeItem) -> list[tuple[str, float]]:
     return [("General Knowledge", 0.32)]
 
 
-def _select_global_topics(
+def _build_item_topic_assignments(
     items: list[KnowledgeItem],
-    item_candidates: dict[int, Counter[str]],
-) -> tuple[Counter[str], Counter[str]]:
-    global_item_counts: Counter[str] = Counter()
-    global_scores: Counter[str] = Counter()
-
-    for item in items:
-        for label, score in item_candidates[item.id].items():
-            global_scores[label] += score
-            global_item_counts[label] += 1
-
-    for item in items:
-        for connection in item.outgoing_connections:
-            if connection.target_item is None or connection.target_item.id not in item_candidates:
-                continue
-            shared = set(item_candidates[item.id]).intersection(item_candidates[connection.target_item.id])
-            for label in shared:
-                global_scores[label] += 0.45
-
-    return global_item_counts, global_scores
-
-
-def discover_topic_assignments(items: list[KnowledgeItem]) -> dict[int, list[tuple[str, float]]]:
-    if not items:
-        return {}
-
-    item_candidates = {item.id: _extract_candidate_scores(item) for item in items}
-    global_item_counts, global_scores = _select_global_topics(items, item_candidates)
-
-    selected_labels = {
-        label
-        for label, count in global_item_counts.items()
-        if (
-            (count >= 2 or global_scores[label] >= 3.4)
-            and not _is_junk_topic(label)
-            and (_is_canonical_topic(label) or count >= 3 or global_scores[label] >= 5.5)
-        )
-    }
-    if not selected_labels:
-        selected_labels = {
-            label
-            for label, _ in global_scores.most_common(12)
-            if not _is_junk_topic(label)
-        }
-
+    *,
+    confidence_floor: float = 0.46,
+) -> tuple[dict[int, list[tuple[str, float]]], dict[int, Counter[str]]]:
     assignments: dict[int, list[tuple[str, float]]] = {}
+    item_candidates: dict[int, Counter[str]] = {}
+
     for item in items:
-        local_scores = item_candidates[item.id].copy()
+        local_scores = _extract_candidate_scores(item)
+        item_candidates[item.id] = local_scores
 
-        for connection in item.outgoing_connections:
-            if connection.target_item is None or connection.target_item.id not in item_candidates:
-                continue
-            for label, score in item_candidates[connection.target_item.id].most_common(4):
-                local_scores[label] += score * 0.16
-
-        ranked = []
+        ranked: list[tuple[str, float]] = []
         for label, score in local_scores.items():
-            if label not in selected_labels and global_item_counts[label] < 2 and score < 2.0:
+            if _is_junk_topic(label):
                 continue
-            if not _is_canonical_topic(label) and global_item_counts[label] < 3 and score < 3.6:
-                continue
-            confidence = min(0.95, 0.3 + score * 0.1 + min(global_item_counts[label], 4) * 0.08)
-            ranked.append((label, round(confidence, 2)))
 
-        ranked.sort(key=lambda pair: (local_scores[pair[0]], pair[1]), reverse=True)
+            normalized_label = _normalize_words(label)
+            token_count = len(normalized_label.split())
+            base_confidence = 0.26 + score * 0.11
+            if token_count >= 2:
+                base_confidence += 0.08
+            if label in CANONICAL_MULTI_WORD_TOPICS:
+                base_confidence += 0.04
+            confidence = round(min(0.95, base_confidence), 2)
+
+            if confidence >= confidence_floor:
+                ranked.append((label, confidence))
+
+        ranked.sort(key=lambda pair: (local_scores[pair[0]], pair[1], pair[0]), reverse=True)
         deduped = _merge_ranked_topics(ranked, local_scores)
+
+        if not deduped and local_scores:
+            label, score = local_scores.most_common(1)[0]
+            fallback_confidence = round(min(0.88, 0.3 + score * 0.12), 2)
+            if not _is_junk_topic(label) and fallback_confidence >= 0.42:
+                deduped = [(label, fallback_confidence)]
 
         if not deduped:
             deduped = _fallback_topics(item)
 
-        assignments[item.id] = deduped[:3]
+        primary = deduped[:1]
+        secondaries = [
+            (label, confidence)
+            for label, confidence in deduped[1:]
+            if confidence >= max(primary[0][1] * 0.72, 0.58)
+        ]
+        assignments[item.id] = (primary + secondaries)[:3]
 
+    return assignments, item_candidates
+
+
+def _stable_global_topic_counts(assignments: dict[int, list[tuple[str, float]]]) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    confidence_totals: Counter[str] = Counter()
+
+    for topics in assignments.values():
+        seen_labels: set[str] = set()
+        for label, confidence in topics:
+            if label in seen_labels:
+                continue
+            seen_labels.add(label)
+            counts[label] += 1
+            confidence_totals[label] += confidence
+
+    stable = Counter(
+        {
+            label: count
+            for label, count in counts.items()
+            if count >= 2 or confidence_totals[label] >= 1.7 or _is_canonical_topic(label)
+        }
+    )
+    if stable:
+        return stable
+    return counts
+
+
+def discover_topic_assignments(items: list[KnowledgeItem]) -> dict[int, list[tuple[str, float]]]:
+    assignments, _ = _build_item_topic_assignments(items)
     return assignments
 
 
@@ -473,6 +479,33 @@ def _load_user_items(db: Session, user_id: int) -> list[KnowledgeItem]:
         .options(selectinload(KnowledgeItem.outgoing_connections).selectinload(KnowledgeConnection.target_item))
         .where(KnowledgeItem.user_id == user_id)
     ).all()
+
+
+def assign_topics_for_item(db: Session, item: KnowledgeItem) -> tuple[int, int]:
+    assignments, _ = _build_item_topic_assignments([item])
+    item_assignments = assignments.get(item.id, [])
+
+    db.execute(delete(ContentTopic).where(ContentTopic.knowledge_id == item.id))
+    db.flush()
+
+    topics_created = 0
+    links_created = 0
+    for label, confidence in item_assignments:
+        topic, created = _get_or_create_topic(db, item.user_id, label)
+        if created:
+            topics_created += 1
+        db.add(
+            ContentTopic(
+                user_id=item.user_id,
+                knowledge_id=item.id,
+                topic_id=topic.id,
+                confidence_score=confidence,
+            )
+        )
+        links_created += 1
+
+    db.commit()
+    return topics_created, links_created
 
 
 def discover_topics_for_user(db: Session, user_id: int, reset_topics: bool = True) -> tuple[int, int, int]:

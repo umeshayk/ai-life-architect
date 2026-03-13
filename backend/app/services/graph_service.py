@@ -49,6 +49,7 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
     topic_counts: Counter[str] = Counter()
     pair_counts: Counter[tuple[str, str]] = Counter()
     topic_to_titles: dict[str, list[str]] = defaultdict(list)
+    recent_topic_names: list[str] = []
 
     for item in items:
         topic_names = sorted(
@@ -64,11 +65,19 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
         for topic_name in topic_names:
             topic_counts[topic_name] += 1
             topic_to_titles[topic_name].append(item.title)
+            if topic_name not in recent_topic_names:
+                recent_topic_names.append(topic_name)
 
         for left, right in combinations(topic_names, 2):
             pair_counts[(left, right)] += 1
 
     top_topic_names = [topic_name for topic_name, _ in topic_counts.most_common(24)]
+    for topic_name in recent_topic_names:
+        if topic_name in top_topic_names:
+            continue
+        top_topic_names.append(topic_name)
+        if len(top_topic_names) >= 32:
+            break
     top_topic_set = set(top_topic_names)
     if not top_topic_names:
         return GraphResponse(nodes=[], edges=[])
@@ -96,9 +105,5 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
         for (source, target), weight in pair_counts.most_common(60)
         if source in top_topic_set and target in top_topic_set
     ]
-
-    connected_topics = {edge.source for edge in edges} | {edge.target for edge in edges}
-    if connected_topics:
-        nodes = [node for node in nodes if node.id in connected_topics]
 
     return GraphResponse(nodes=nodes, edges=edges)

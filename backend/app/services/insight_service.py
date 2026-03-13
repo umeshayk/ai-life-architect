@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.models.topic import Topic
-from app.services.topic_service import discover_topics, get_topics_with_counts, rebuild_topics_for_user
+from app.services.topic_service import build_stable_topic_counts, discover_topics, get_topics_with_counts, rebuild_topics_for_user
 
 
 def suggestion_for_topic(topic_name: str) -> str:
@@ -54,7 +54,7 @@ def build_weekly_insights(db: Session, user_id: int) -> dict:
         .join(KnowledgeItem, KnowledgeItem.id == ContentTopic.knowledge_id)
         .where(KnowledgeItem.user_id == user_id, KnowledgeItem.created_at >= week_ago)
     ).all()
-    topic_counts = Counter(name for name, _ in topic_rows)
+    topic_counts = build_stable_topic_counts([name for name, _ in topic_rows])
     topic_lookup = {
         topic.name: topic.id
         for topic, _ in get_topics_with_counts(db, user_id)
