@@ -1565,3 +1565,40 @@ select {
   font-size: 0.78rem;
   text-transform: none;
 }
+
+
+.brain-map-tooltip {
+  position: absolute;
+  z-index: 3;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.14);
+  color: #0f172a;
+  pointer-events: none;
+}
+
+.brain-map-tooltip strong {
+  font-size: 0.94rem;
+  line-height: 1.2;
+}
+
+.brain-map-tooltip span {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #475569;
+}
+
+.brain-map-tooltip-domain {
+  align-self: flex-start;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}

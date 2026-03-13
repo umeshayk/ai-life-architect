@@ -311,6 +311,73 @@ function normalizeGraphResponse(payload) {
   };
 }
 
+const CONFIDENCE_FILTER_EDGE_TYPES = new Set(["related_to", "subtopic_of", "used_in"]);
+
+function mergeGraphData(currentGraph, incomingGraph) {
+  const nextGraph = normalizeGraphResponse(incomingGraph);
+  const nodeMap = new Map((currentGraph?.nodes || []).map((node) => [String(node.id), node]));
+  nextGraph.nodes.forEach((node) => {
+    nodeMap.set(String(node.id), { ...(nodeMap.get(String(node.id)) || {}), ...node });
+  });
+
+  const edgeMap = new Map();
+  [...(currentGraph?.edges || []), ...(nextGraph.edges || [])].forEach((edge) => {
+    const sourceId = typeof edge.source === "object" ? edge.source.id : edge.source;
+    const targetId = typeof edge.target === "object" ? edge.target.id : edge.target;
+    const key = `${sourceId}::${targetId}::${edge.type}`;
+    if (!edgeMap.has(key) || (edge.weight || 0) > ((edgeMap.get(key)?.weight) || 0)) {
+      edgeMap.set(key, { ...edge, source: sourceId, target: targetId });
+    }
+  });
+
+  return {
+    ...currentGraph,
+    nodes: Array.from(nodeMap.values()),
+    edges: Array.from(edgeMap.values()),
+    available_domains: Array.from(new Set([...(currentGraph?.available_domains || []), ...(nextGraph.available_domains || [])])),
+  };
+}
+
+function filterGraphByConfidence(graph, activeTopic = "") {
+  const topicLabel = (activeTopic || graph?.topic || "").trim().toLowerCase();
+  const allNodes = graph?.nodes || [];
+  const allEdges = graph?.edges || [];
+
+  const filteredEdges = allEdges.filter((edge) => {
+    if (!CONFIDENCE_FILTER_EDGE_TYPES.has(edge.type)) {
+      return true;
+    }
+    return (edge.weight || 0) >= 0.7;
+  });
+
+  const connectedNodeIds = new Set();
+  filteredEdges.forEach((edge) => {
+    const sourceId = typeof edge.source === "object" ? edge.source.id : edge.source;
+    const targetId = typeof edge.target === "object" ? edge.target.id : edge.target;
+    connectedNodeIds.add(sourceId);
+    connectedNodeIds.add(targetId);
+  });
+
+  const filteredNodes = allNodes.filter((node) => {
+    if (node.type === "domain" || node.type === "knowledge") {
+      return true;
+    }
+    if (node.is_center) {
+      return true;
+    }
+    if (topicLabel && node.label.toLowerCase() === topicLabel) {
+      return true;
+    }
+    return connectedNodeIds.has(node.id);
+  });
+
+  return {
+    ...graph,
+    nodes: filteredNodes,
+    edges: filteredEdges,
+  };
+}
+
 
 function DomainTopicIcon({ domain }) {
   const style = DOMAIN_ICON_STYLES[domain] || DOMAIN_ICON_STYLES.General;
@@ -418,8 +485,10 @@ export default function BrainMap() {
   const [historyStack, setHistoryStack] = useState([]);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [search, setSearch] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [isExpandingNode, setIsExpandingNode] = useState(false);
   const [error, setError] = useState("");
   const [learningPaths, setLearningPaths] = useState([]);
   const [learningPathsError, setLearningPathsError] = useState("");
@@ -497,8 +566,9 @@ export default function BrainMap() {
 
 
   const graphWithDegree = useMemo(() => {
+    const confidenceFilteredGraph = filterGraphByConfidence(graph, currentTopic);
     const nodeDegree = {};
-    graph.edges.forEach((edge) => {
+    confidenceFilteredGraph.edges.forEach((edge) => {
       const sourceId = typeof edge.source === "object" ? edge.source.id : edge.source;
       const targetId = typeof edge.target === "object" ? edge.target.id : edge.target;
       nodeDegree[sourceId] = (nodeDegree[sourceId] || 0) + 1;
@@ -506,13 +576,13 @@ export default function BrainMap() {
     });
 
     return {
-      nodes: graph.nodes.map((node) => ({
+      nodes: confidenceFilteredGraph.nodes.map((node) => ({
         ...node,
         degree: nodeDegree[node.id] || 1
       })),
-      edges: graph.edges.map((edge) => ({ ...edge }))
+      edges: confidenceFilteredGraph.edges.map((edge) => ({ ...edge }))
     };
-  }, [graph]);
+  }, [currentTopic, graph]);
 
   const filteredData = useMemo(
     () => ({
@@ -542,6 +612,7 @@ export default function BrainMap() {
   }, [graphWithDegree.nodes, search]);
 
   const selectedNode = graphWithDegree.nodes.find((node) => node.id === selectedNodeId) || null;
+  const hoveredNode = graphWithDegree.nodes.find((node) => node.id === hoveredNodeId) || null;
   const shouldShowSearchMatches = useMemo(() => {
     const query = search.trim().toLowerCase();
     const activeTopicLabel = (currentTopic || graph.topic || selectedNode?.label || "").trim().toLowerCase();
@@ -658,13 +729,13 @@ export default function BrainMap() {
     const graphApi = fgRef.current;
     const groupAccessor = (node) => (node.type === "domain" ? node.label : node.group);
     didAutoFitRef.current = false;
-    graphApi.d3Force("charge").strength(currentLevel >= 2 ? 0 : -900);
+    graphApi.d3Force("charge").strength(currentLevel === 3 ? -250 : currentLevel >= 2 ? 0 : -900);
     graphApi.d3Force("link").distance((link) => {
       if (currentLevel >= 4) {
         return 150;
       }
       if (currentLevel === 3) {
-        return 170 + (link.weight || 1) * 12;
+        return 140;
       }
       return Math.max(160, graphSize.width / 6) + (link.weight || 1) * 18;
     });
@@ -677,7 +748,7 @@ export default function BrainMap() {
       ? ((() => {
           let nodes = [];
           const force = (alpha) => {
-            const padding = 12;
+            const padding = 40;
             for (let i = 0; i < nodes.length; i += 1) {
               for (let j = i + 1; j < nodes.length; j += 1) {
                 const left = nodes[i];
@@ -689,7 +760,7 @@ export default function BrainMap() {
                 if (distance >= minDistance) {
                   continue;
                 }
-                const push = ((minDistance - distance) / distance) * 0.14 * alpha;
+                const push = ((minDistance - distance) / distance) * 0.2 * alpha;
                 const offsetX = dx * push;
                 const offsetY = dy * push;
                 left.vx -= offsetX;
@@ -749,13 +820,46 @@ export default function BrainMap() {
     focusNode(node.id);
   };
 
-  const handleNodeAction = (node) => {
+  const expandTopicNode = async (node) => {
+    if (!node || node.type !== "topic") {
+      return false;
+    }
+
+    setIsExpandingNode(true);
+    setError("");
+    try {
+      const searchResponse = await api.get("/api/topics/search", { params: { q: node.label } });
+      const match = searchResponse.data?.find((item) => item.name?.toLowerCase() === node.label.toLowerCase()) || searchResponse.data?.[0];
+      if (!match) {
+        return false;
+      }
+      const graphResponse = await api.get(`/api/topics/${match.id}/graph`);
+      setGraph((prev) => mergeGraphData(prev, graphResponse.data));
+      pendingCenterLabelRef.current = node.label;
+      didAutoFitRef.current = true;
+      return true;
+    } catch (err) {
+      setError(err.response?.data?.detail || "Unable to expand that topic.");
+      return false;
+    } finally {
+      setIsExpandingNode(false);
+    }
+  };
+
+  const handleNodeAction = async (node) => {
     if (!node) {
       return;
     }
 
     if (selectedNodeId === node.id) {
       drillIntoNode(node);
+      return;
+    }
+
+    if (node.type === "topic") {
+      setSelectedNodeId(node.id);
+      pendingCenterLabelRef.current = node.label;
+      await expandTopicNode(node);
       return;
     }
 
@@ -820,6 +924,21 @@ export default function BrainMap() {
       fgRef.current.zoom(currentLevel >= 4 ? 2.5 : 2.15, 700);
     });
   }, [currentLevel, filteredData.nodes, graphSize]);
+
+  const handleCanvasMouseMove = (event) => {
+    if (!shellRef.current) {
+      return;
+    }
+    const bounds = shellRef.current.getBoundingClientRect();
+    setTooltipPosition({
+      x: event.clientX - bounds.left + 14,
+      y: event.clientY - bounds.top + 14,
+    });
+  };
+
+  const handleCanvasMouseLeave = () => {
+    setHoveredNodeId(null);
+  };
 
   const focusGroup = (group) => {
     if (currentLevel === 1) {
@@ -923,6 +1042,7 @@ export default function BrainMap() {
         </div>
         <p className="muted">{levelSummary(graph.level || currentLevel, graph.domain || currentDomain, graph.topic || currentTopic)}</p>
         {isSearching && <p className="muted">Finding the best topic match and loading its related graph...</p>}
+        {isExpandingNode && <p className="muted">Expanding the selected topic and merging related nodes...</p>}
         {shouldShowSearchMatches && !isSearching && (
           <div className="brain-map-search-results">
             {searchMatches.map((match) => (
@@ -958,7 +1078,7 @@ export default function BrainMap() {
           {!error && filteredData.nodes.length === 0 ? (
           <p className="muted">No graph data available yet. Add more topic-linked knowledge first.</p>
         ) : (
-          <div ref={shellRef} className="brain-map-canvas force-graph-shell">
+          <div ref={shellRef} className="brain-map-canvas force-graph-shell" onMouseMove={handleCanvasMouseMove} onMouseLeave={handleCanvasMouseLeave}>
             {graph.level === 1 && (
               <div className="brain-map-overlay">
                 {clusterLabels.map((cluster) => (
@@ -998,6 +1118,16 @@ export default function BrainMap() {
                     {cluster.label}
                   </div>
                 ))}
+              </div>
+            )}
+            {hoveredNode && (hoveredNode.type === "topic" || hoveredNode.type === "bridge" || hoveredNode.type === "domain") && (
+              <div
+                className="brain-map-tooltip"
+                style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}
+              >
+                <strong>{hoveredNode.label}</strong>
+                <span>{hoveredNode.summary || hoveredNode.cluster || `Related ${hoveredNode.group || "General"} topic`}</span>
+                <span className="brain-map-tooltip-domain">{hoveredNode.domain || hoveredNode.group || "General"}</span>
               </div>
             )}
             <ForceGraph2D
