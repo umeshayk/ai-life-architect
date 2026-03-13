@@ -8,6 +8,7 @@ from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.models.knowledge_connection import KnowledgeConnection
 from app.models.topic import Topic
+from app.services.topic_extractor import extract_topic_phrases, tokenize_topic_segment
 
 
 STOP_WORDS = {
@@ -27,7 +28,9 @@ STOP_WORDS = {
     "can",
     "for",
     "from",
+    "help",
     "how",
+    "improve",
     "in",
     "into",
     "is",
@@ -47,6 +50,8 @@ STOP_WORDS = {
     "was",
     "were",
     "with",
+    "when",
+    "why",
     "you",
     "your",
 }
@@ -61,6 +66,7 @@ JUNK_TOPICS = {
     "life",
     "located",
     "management",
+    "method",
     "note",
     "notes",
     "personal",
@@ -78,6 +84,7 @@ JUNK_TOPICS = {
     "content",
     "title",
     "summary",
+    "organize",
     "document",
     "documents",
     "link",
@@ -119,6 +126,12 @@ ALIAS_MAP = {
     "hydroponics": "Hydroponic Farming",
     "fastapi": "FastAPI",
     "react": "React",
+    "building second brain": "Building Second Brain",
+    "second brain method": "Building Second Brain",
+    "brain method": "Building Second Brain",
+    "knowledge organization": "Knowledge Organization",
+    "organize knowledge": "Knowledge Organization",
+    "personal productivity": "Personal Productivity",
     "travel spiritual": "Travel / Spiritual",
     "jyotirlinga": "Travel / Spiritual",
     "temple": "Travel / Spiritual",
@@ -136,13 +149,16 @@ ALIAS_MAP = {
 CANONICAL_MULTI_WORD_TOPICS = {
     "AI / Technology",
     "AI Life Architect",
+    "Building Second Brain",
     "Embeddings",
     "Farm Business",
     "FastAPI",
     "Hydroponic Farming",
+    "Knowledge Organization",
     "Knowledge Management",
     "LLM Systems",
     "Mushroom Farming",
+    "Personal Productivity",
     "React",
     "Retrieval Augmented Generation",
     "Semantic Search",
@@ -309,14 +325,7 @@ def _is_canonical_topic(label: str) -> bool:
 
 
 def _tokenize_segment(text: str) -> list[str]:
-    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{2,}", text.lower())
-    cleaned = []
-    for token in tokens:
-        normalized = _normalize_words(token)
-        if not normalized or normalized in STOP_WORDS or normalized in JUNK_TOPICS:
-            continue
-        cleaned.append(normalized)
-    return cleaned
+    return tokenize_topic_segment(text, STOP_WORDS, JUNK_TOPICS)
 
 
 def _extract_candidate_scores(item: KnowledgeItem) -> Counter[str]:
@@ -343,15 +352,19 @@ def _extract_candidate_scores(item: KnowledgeItem) -> Counter[str]:
             tokens = _tokenize_segment(segment)
             if not tokens:
                 continue
-            for size, multiplier in ((3, 1.45), (2, 1.25), (1, 0.75)):
-                for index in range(len(tokens) - size + 1):
-                    phrase = " ".join(tokens[index:index + size])
-                    label = normalize_topic_name(phrase)
-                    if not label or _is_junk_topic(label):
-                        continue
-                    if size == 1 and not _allow_single_word_topic(phrase, label):
-                        continue
-                    scores[label] += weight * multiplier
+            for phrase, size in extract_topic_phrases(tokens, max_words=4):
+                label = normalize_topic_name(phrase)
+                if not label or _is_junk_topic(label):
+                    continue
+                scores[label] += weight * {4: 1.7, 3: 1.5, 2: 1.35}.get(size, 1.2)
+
+            for phrase in tokens:
+                label = normalize_topic_name(phrase)
+                if not label or _is_junk_topic(label):
+                    continue
+                if not _allow_single_word_topic(phrase, label):
+                    continue
+                scores[label] += weight * 0.7
     return scores
 
 
