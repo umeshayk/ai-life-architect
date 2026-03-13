@@ -18,6 +18,52 @@ function graphColor(group) {
   return GROUP_COLORS[group] || GROUP_COLORS.General;
 }
 
+function createClusterAnchors(groups, width, height) {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = Math.min(width, height) * 0.28;
+  const sortedGroups = [...groups].sort();
+
+  if (!sortedGroups.length) {
+    return new Map();
+  }
+
+  return new Map(
+    sortedGroups.map((group, index) => {
+      const angle = (2 * Math.PI * index) / sortedGroups.length - Math.PI / 2;
+      return [
+        group,
+        {
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle)
+        }
+      ];
+    })
+  );
+}
+
+function createClusterForce(axis, anchorMap, width, height) {
+  let nodes = [];
+
+  const force = (alpha) => {
+    const strength = 0.22 * alpha;
+    nodes.forEach((node) => {
+      const anchor = anchorMap.get(node.group) || { x: width / 2, y: height / 2 };
+      if (axis === "x") {
+        node.vx += (anchor.x - node.x) * strength;
+      } else {
+        node.vy += (anchor.y - node.y) * strength;
+      }
+    });
+  };
+
+  force.initialize = (nextNodes) => {
+    nodes = nextNodes || [];
+  };
+
+  return force;
+}
+
 function nodeRadius(node) {
   return Math.min(28, 4 + (node.degree || 0) * 2);
 }
@@ -99,6 +145,10 @@ export default function BrainMap() {
       hasNodes: groups.has(group)
     }));
   }, [filteredData.nodes]);
+  const clusterAnchors = useMemo(
+    () => createClusterAnchors(new Set(filteredData.nodes.map((node) => node.group)), graphSize.width, graphSize.height),
+    [filteredData.nodes, graphSize]
+  );
   const focusContext = useMemo(() => {
     if (!selectedNodeId) {
       return { neighborIds: new Set(), connectedEdges: new Set(), connectedLabels: [] };
@@ -136,9 +186,11 @@ export default function BrainMap() {
     graphApi.d3Force("charge").strength(-900);
     graphApi.d3Force("link").distance((link) => Math.max(180, graphSize.width / 6) + (link.weight || 1) * 20);
     graphApi.d3Force("center").strength(0.3);
+    graphApi.d3Force("cluster-x", createClusterForce("x", clusterAnchors, graphSize.width, graphSize.height));
+    graphApi.d3Force("cluster-y", createClusterForce("y", clusterAnchors, graphSize.width, graphSize.height));
     graphApi.d3Force("collision", null);
     graphApi.d3ReheatSimulation();
-  }, [filteredData, graphSize]);
+  }, [filteredData, graphSize, clusterAnchors]);
 
   const focusNode = (nodeId) => {
     setSelectedNodeId(nodeId);
