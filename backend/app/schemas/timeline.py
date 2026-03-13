@@ -41,7 +41,9 @@ class KnowledgeGrowthPoint(BaseModel):
 class KnowledgeGrowthResponse(BaseModel):
     notes_count: int
     topics_count: int
-    weekly_growth: int
+    this_week_count: int
+    previous_week_count: int
+    weekly_growth_delta: int
     fastest_topic: str | None
     timeline: list[KnowledgeGrowthPoint]
 

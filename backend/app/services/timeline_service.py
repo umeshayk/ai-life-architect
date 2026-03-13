@@ -165,13 +165,23 @@ def get_knowledge_growth(db: Session, user_id: int) -> KnowledgeGrowthResponse:
         return KnowledgeGrowthResponse(
             notes_count=0,
             topics_count=0,
-            weekly_growth=0,
+            this_week_count=0,
+            previous_week_count=0,
+            weekly_growth_delta=0,
             fastest_topic=None,
             timeline=[],
         )
 
-    weekly_cutoff = datetime.now(UTC) - timedelta(days=7)
-    weekly_growth = sum(1 for item in all_items if item.created_at.astimezone(UTC) >= weekly_cutoff)
+    now = datetime.now(UTC)
+    this_week_cutoff = now - timedelta(days=7)
+    previous_week_cutoff = now - timedelta(days=14)
+    this_week_count = sum(1 for item in all_items if item.created_at.astimezone(UTC) >= this_week_cutoff)
+    previous_week_count = sum(
+        1
+        for item in all_items
+        if previous_week_cutoff <= item.created_at.astimezone(UTC) < this_week_cutoff
+    )
+    weekly_growth_delta = this_week_count - previous_week_count
     topic_counts: Counter[str] = Counter()
     cumulative_topics: set[str] = set()
     monthly_notes: dict[str, int] = {}
@@ -217,7 +227,9 @@ def get_knowledge_growth(db: Session, user_id: int) -> KnowledgeGrowthResponse:
     return KnowledgeGrowthResponse(
         notes_count=len(all_items),
         topics_count=len(cumulative_topics),
-        weekly_growth=weekly_growth,
+        this_week_count=this_week_count,
+        previous_week_count=previous_week_count,
+        weekly_growth_delta=weekly_growth_delta,
         fastest_topic=topic_counts.most_common(1)[0][0] if topic_counts else None,
         timeline=timeline,
     )

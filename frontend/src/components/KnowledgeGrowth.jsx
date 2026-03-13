@@ -4,6 +4,7 @@ export default function KnowledgeGrowth({ growth }) {
   }
 
   const maxNotes = Math.max(1, ...(growth.timeline || []).map((point) => point.notes));
+  const deltaPrefix = growth.weekly_growth_delta > 0 ? "+" : "";
 
   return (
     <section className="card">
@@ -19,8 +20,10 @@ export default function KnowledgeGrowth({ growth }) {
         </div>
         <div className="result-item">
           <h4>📈 Weekly Growth</h4>
-          <p className="metric">+{growth.weekly_growth}</p>
-          <p className="source-meta">notes last 7 days</p>
+          <p className="metric">{deltaPrefix}{growth.weekly_growth_delta}</p>
+          <p className="source-meta">vs previous 7 days</p>
+          <p className="source-meta">This week: {growth.this_week_count}</p>
+          <p className="source-meta">Previous week: {growth.previous_week_count}</p>
         </div>
         <div className="result-item">
           <h4>🔥 Fastest Topic</h4>
