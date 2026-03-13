@@ -64,6 +64,18 @@ function buildChartPaths(labels, series, width, height, padding) {
   });
 }
 
+function shouldRenderAxisLabel(index, totalLabels, groupBy) {
+  if (totalLabels <= 10) {
+    return true;
+  }
+
+  const step = groupBy === "day"
+    ? Math.ceil(totalLabels / 8)
+    : Math.ceil(totalLabels / 10);
+
+  return index === 0 || index === totalLabels - 1 || index % step === 0;
+}
+
 export default function Timeline() {
   const [range, setRange] = useState("30d");
   const [groupBy, setGroupBy] = useState("week");
@@ -377,6 +389,9 @@ export default function Timeline() {
                   );
                 })}
                 {evolution.labels.map((label, index) => {
+                  if (!shouldRenderAxisLabel(index, evolution.labels.length, groupBy)) {
+                    return null;
+                  }
                   const x =
                     evolution.labels.length === 1
                       ? chartPadding.left + (chartWidth - chartPadding.left - chartPadding.right) / 2
