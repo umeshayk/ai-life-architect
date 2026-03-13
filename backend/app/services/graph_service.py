@@ -13,6 +13,7 @@ from app.models.topic_relationship import TopicRelationship
 from app.models.topic import Topic
 from app.schemas.graph import GraphEdge, GraphNode, GraphResponse
 from app.services.topic_bridge_service import build_topic_bridges
+from app.services.topic_cluster_service import annotate_graph_clusters
 from app.services.topic_hierarchy_service import infer_topic_hierarchy, sync_topic_hierarchy_metadata
 
 
@@ -437,7 +438,8 @@ def _build_level_three(context: dict, bridge_context: dict, domain: str | None, 
             )
         )
 
-    return GraphResponse(nodes=nodes, edges=edges, level=3, domain=domain or topic_to_groups.get(topic), topic=topic, available_domains=available_domains)
+    response = GraphResponse(nodes=nodes, edges=edges, level=3, domain=domain or topic_to_groups.get(topic), topic=topic, available_domains=available_domains)
+    return annotate_graph_clusters(response, center_topic=topic)
 
 
 def _build_level_four(context: dict, bridge_context: dict | None, domain: str | None, topic: str | None) -> GraphResponse:

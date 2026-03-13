@@ -1555,3 +1555,13 @@ select {
   background: linear-gradient(90deg, #2563eb 0%, #0f766e 100%);
   transition: width 0.2s ease;
 }
+
+
+.brain-map-cluster-hint {
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.88);
+  border-style: dashed;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  font-size: 0.78rem;
+  text-transform: none;
+}

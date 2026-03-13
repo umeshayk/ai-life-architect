@@ -41,6 +41,18 @@ const DOMAIN_ANCHORS = {
   General: { x: 0.64, y: 0.28 }
 };
 
+const CLUSTER_LAYOUT_HINTS = {
+  Retrieval: { x: 0.73, y: 0.42 },
+  Representation: { x: 0.3, y: 0.28 },
+  Storage: { x: 0.28, y: 0.74 },
+  Ranking: { x: 0.7, y: 0.74 },
+  "Agriculture Automation": { x: 0.7, y: 0.38 },
+  "Knowledge Systems": { x: 0.28, y: 0.42 },
+  "Real Estate": { x: 0.72, y: 0.56 },
+  Bridge: { x: 0.5, y: 0.18 },
+  General: { x: 0.66, y: 0.3 }
+};
+
 function hexToRgb(hex) {
   const normalized = hex.replace("#", "");
   const value = normalized.length === 3
@@ -74,6 +86,23 @@ function createClusterAnchors(groups, width, height) {
         ? { x: width * DOMAIN_ANCHORS[group].x, y: height * DOMAIN_ANCHORS[group].y }
         : fallback;
       return [group, anchor];
+    })
+  );
+}
+
+function createFocusedClusterAnchors(clusters, width, height) {
+  const sortedClusters = [...clusters].sort();
+  return new Map(
+    sortedClusters.map((cluster, index) => {
+      const fallbackAngle = (2 * Math.PI * index) / Math.max(sortedClusters.length, 1) - Math.PI / 2;
+      const fallback = {
+        x: width / 2 + Math.min(width, height) * 0.3 * Math.cos(fallbackAngle),
+        y: height / 2 + Math.min(width, height) * 0.3 * Math.sin(fallbackAngle)
+      };
+      const anchor = CLUSTER_LAYOUT_HINTS[cluster]
+        ? { x: width * CLUSTER_LAYOUT_HINTS[cluster].x, y: height * CLUSTER_LAYOUT_HINTS[cluster].y }
+        : fallback;
+      return [cluster, anchor];
     })
   );
 }
@@ -158,30 +187,47 @@ function applyLevelLayout(nodes, width, height, level, activeTopic) {
   }
 
   if (level === 3) {
-    const focusNode = cloned.find((node) => node.label === activeTopic) || cloned[0];
-    const bridgeNodes = cloned.filter((node) => node.type === "bridge");
-    const topicNodes = cloned.filter((node) => node.id !== focusNode?.id && node.type !== "bridge");
+    const focusNode = cloned.find((node) => node.label === activeTopic || node.is_center) || cloned[0];
+    const clusteredNodes = cloned.filter((node) => node.id !== focusNode?.id);
     if (focusNode) {
       focusNode.x = centerX;
       focusNode.y = centerY;
       focusNode.fx = centerX;
       focusNode.fy = centerY;
     }
-    bridgeNodes.forEach((node, index) => {
-      const angle = (-Math.PI / 2) + ((2 * Math.PI * index) / Math.max(1, bridgeNodes.length));
-      const point = polarPoint(centerX, centerY, Math.min(width, height) * 0.18, angle);
-      node.x = point.x;
-      node.y = point.y;
-      node.fx = point.x;
-      node.fy = point.y;
-    });
-    topicNodes.forEach((node, index) => {
-      const angle = (-Math.PI / 2) + ((2 * Math.PI * index) / Math.max(1, topicNodes.length));
-      const point = polarPoint(centerX, centerY, Math.min(width, height) * 0.32, angle);
-      node.x = point.x;
-      node.y = point.y;
-      node.fx = point.x;
-      node.fy = point.y;
+
+    const clusterNames = [...new Set(clusteredNodes.map((node) => node.cluster || node.group || "General"))];
+    if (!clusterNames.length) {
+      return cloned;
+    }
+
+    const anchorMap = createFocusedClusterAnchors(clusterNames, width, height);
+    clusterNames.forEach((clusterName) => {
+      const clusterNodes = clusteredNodes
+        .filter((node) => (node.cluster || node.group || "General") === clusterName)
+        .sort((left, right) => {
+          const rankDelta = (left.cluster_rank || 999) - (right.cluster_rank || 999);
+          if (rankDelta !== 0) {
+            return rankDelta;
+          }
+          return (right.importance || 0) - (left.importance || 0);
+        });
+      const anchor = anchorMap.get(clusterName) || { x: centerX, y: centerY };
+      const anchorAngle = Math.atan2(anchor.y - centerY, anchor.x - centerX);
+      const clusterScale = Math.max(1, clusterNodes.length / 2);
+      clusterNodes.forEach((node, index) => {
+        const orbit = Math.floor(index / 2);
+        const slot = index % 2;
+        const nodesInOrbit = Math.min(2, Math.max(1, clusterNodes.length - orbit * 2));
+        const localRadius = 42 + orbit * (38 + clusterScale * 8);
+        const spread = nodesInOrbit === 1 ? 0 : 0.95 + orbit * 0.08;
+        const angle = anchorAngle + ((slot - (nodesInOrbit - 1) / 2) * spread);
+        const point = polarPoint(anchor.x, anchor.y, clusterNodes.length === 1 ? 0 : localRadius, angle);
+        node.x = point.x;
+        node.y = point.y;
+        node.fx = point.x;
+        node.fy = point.y;
+      });
     });
     return cloned;
   }
@@ -248,9 +294,14 @@ function levelSummary(level, domain, topic) {
 }
 
 function normalizeGraphResponse(payload) {
+  const topicLabel = payload?.topic || "";
   const nodes = (payload?.nodes || []).map((node) => ({
     ...node,
-    label: node.label || node.name || "Untitled Topic"
+    label: node.label || node.name || "Untitled Topic",
+    domain: node.domain || node.group || payload?.domain || "General",
+    cluster: node.cluster || node.group || payload?.domain || "General",
+    centrality: node.centrality ?? node.importance ?? 0,
+    is_center: node.is_center || (topicLabel && (node.label || node.name || "").toLowerCase() === topicLabel.toLowerCase())
   }));
 
   return {
@@ -555,6 +606,39 @@ export default function BrainMap() {
     [clusterAnchors, filteredData.nodes, graphSize]
   );
 
+  const focusedClusterLabels = useMemo(() => {
+    if (currentLevel !== 3) {
+      return [];
+    }
+
+    const buckets = new Map();
+    filteredData.nodes.forEach((node) => {
+      if (node.type !== "topic" || node.is_center || !node.cluster) {
+        return;
+      }
+      const current = buckets.get(node.cluster) || {
+        label: node.cluster,
+        color: GROUP_COLORS[node.group] || GROUP_COLORS.General,
+        totalX: 0,
+        totalY: 0,
+        count: 0
+      };
+      current.totalX += node.x || graphSize.width / 2;
+      current.totalY += node.y || graphSize.height / 2;
+      current.count += 1;
+      buckets.set(node.cluster, current);
+    });
+
+    return Array.from(buckets.values())
+      .filter((bucket) => bucket.label !== "General" && bucket.count >= 1)
+      .map((bucket) => ({
+        label: bucket.label,
+        color: bucket.color,
+        x: bucket.totalX / Math.max(1, bucket.count),
+        y: Math.max(34, bucket.totalY / Math.max(1, bucket.count) + 28)
+      }));
+  }, [currentLevel, filteredData.nodes, graphSize]);
+
   useEffect(() => {
     if (!fgRef.current || !filteredData.nodes.length) {
       return;
@@ -578,7 +662,38 @@ export default function BrainMap() {
     graphApi.d3Force("cluster-y", currentLevel === 1 ? createClusterForce("y", clusterAnchors, graphSize.width, graphSize.height, groupAccessor) : null);
     graphApi.d3Force("leader-x", currentLevel === 1 ? createLeaderForce("x", groupLeaders) : null);
     graphApi.d3Force("leader-y", currentLevel === 1 ? createLeaderForce("y", groupLeaders) : null);
-    graphApi.d3Force("collision", null);
+    graphApi.d3Force("collision", currentLevel === 3
+      ? ((() => {
+          let nodes = [];
+          const force = (alpha) => {
+            const padding = 12;
+            for (let i = 0; i < nodes.length; i += 1) {
+              for (let j = i + 1; j < nodes.length; j += 1) {
+                const left = nodes[i];
+                const right = nodes[j];
+                const dx = (right.x || 0) - (left.x || 0);
+                const dy = (right.y || 0) - (left.y || 0);
+                const distance = Math.hypot(dx, dy) || 0.0001;
+                const minDistance = nodeRadius(left, currentLevel, currentTopic) + nodeRadius(right, currentLevel, currentTopic) + padding;
+                if (distance >= minDistance) {
+                  continue;
+                }
+                const push = ((minDistance - distance) / distance) * 0.14 * alpha;
+                const offsetX = dx * push;
+                const offsetY = dy * push;
+                left.vx -= offsetX;
+                left.vy -= offsetY;
+                right.vx += offsetX;
+                right.vy += offsetY;
+              }
+            }
+          };
+          force.initialize = (nextNodes) => {
+            nodes = nextNodes || [];
+          };
+          return force;
+        })())
+      : null);
     graphApi.d3ReheatSimulation();
   }, [clusterAnchors, currentLevel, filteredData, graphSize, groupLeaders]);
 
@@ -855,6 +970,25 @@ export default function BrainMap() {
                 ))}
               </div>
             )}
+            {currentLevel === 3 && focusedClusterLabels.length > 0 && (
+              <div className="brain-map-overlay">
+                {focusedClusterLabels.map((cluster) => (
+                  <div
+                    key={cluster.label}
+                    className="brain-map-cluster-label brain-map-cluster-hint"
+                    style={{
+                      left: `${cluster.x}px`,
+                      top: `${cluster.y}px`,
+                      borderColor: cluster.color,
+                      color: cluster.color
+                    }}
+                  >
+                    <span className="brain-map-cluster-dot" style={{ backgroundColor: cluster.color }} />
+                    {cluster.label}
+                  </div>
+                ))}
+              </div>
+            )}
             <ForceGraph2D
               ref={fgRef}
               width={graphSize.width}
@@ -872,21 +1006,33 @@ export default function BrainMap() {
               linkWidth={(link) => {
                 const baseWidth = 1 + (link.weight || 1);
                 if (!selectedNodeId) {
-                  return Math.min(6, baseWidth);
+                  return currentLevel === 3 ? Math.min(4, baseWidth) : Math.min(6, baseWidth);
                 }
                 const sourceId = typeof link.source === "object" ? link.source.id : link.source;
                 const targetId = typeof link.target === "object" ? link.target.id : link.target;
                 const isConnected = sourceId === selectedNodeId || targetId === selectedNodeId;
-                return isConnected ? Math.min(7, baseWidth + 0.8) : 0.8;
+                if (!isConnected) {
+                  return 0.6;
+                }
+                const targetNodeId = sourceId === selectedNodeId ? targetId : sourceId;
+                const targetNode = filteredData.nodes.find((node) => node.id === targetNodeId);
+                const isPrimaryClusterEdge = currentLevel === 3 && targetNode && ((targetNode.cluster_rank || 99) <= 2 || targetNode.type === "bridge");
+                return isPrimaryClusterEdge ? Math.min(7, baseWidth + 0.9) : Math.min(5, baseWidth + 0.1);
               }}
               linkColor={(link) => {
                 if (!selectedNodeId) {
-                  return "rgba(59, 130, 246, 0.38)";
+                  return currentLevel === 3 ? "rgba(59, 130, 246, 0.26)" : "rgba(59, 130, 246, 0.38)";
                 }
                 const sourceId = typeof link.source === "object" ? link.source.id : link.source;
                 const targetId = typeof link.target === "object" ? link.target.id : link.target;
                 const isConnected = sourceId === selectedNodeId || targetId === selectedNodeId;
-                return isConnected ? "rgba(37, 99, 235, 0.9)" : "rgba(148, 163, 184, 0.08)";
+                if (!isConnected) {
+                  return "rgba(148, 163, 184, 0.06)";
+                }
+                const targetNodeId = sourceId === selectedNodeId ? targetId : sourceId;
+                const targetNode = filteredData.nodes.find((node) => node.id === targetNodeId);
+                const isPrimaryClusterEdge = currentLevel === 3 && targetNode && ((targetNode.cluster_rank || 99) <= 2 || targetNode.type === "bridge");
+                return isPrimaryClusterEdge ? "rgba(37, 99, 235, 0.9)" : "rgba(59, 130, 246, 0.58)";
               }}
               nodeLabel={(node) => `${node.label} (${node.group || "General"})`}
               nodeColor={(node) => {
@@ -908,11 +1054,12 @@ export default function BrainMap() {
                 const isSelected = selectedNodeId === node.id;
                 const isNeighbor = focusContext.neighborIds.has(node.id);
                 const isDimmed = selectedNodeId && !isNeighbor;
-                const isPrimaryLevelThreeNode = currentLevel === 3 && (node.label === currentTopic || node.type === "bridge");
+                const isPrimaryLevelThreeNode = currentLevel === 3 && (node.label === currentTopic || node.type === "bridge" || node.is_center);
                 const isPrimaryLevelFourNode = currentLevel === 4 && node.label === currentTopic;
                 const showLevelThreeLabel = currentLevel === 3 && (
-                  node.type === "topic"
+                  node.is_center
                   || node.type === "bridge"
+                  || (node.type === "topic" && ((node.cluster_rank || 99) <= 2 || (node.centrality || 0) >= 4))
                   || isSelected
                   || hoveredNodeId === node.id
                 );

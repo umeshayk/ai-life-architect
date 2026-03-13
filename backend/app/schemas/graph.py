@@ -9,6 +9,11 @@ class GraphNode(BaseModel):
     size: float
     importance: float = 0.0
     connection_count: int = 0
+    domain: str | None = None
+    cluster: str | None = None
+    cluster_rank: int | None = None
+    centrality: float | None = None
+    is_center: bool = False
     summary: str | None = None
     content_type: str | None = None
     tags: list[str] = Field(default_factory=list)
