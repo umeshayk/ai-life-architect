@@ -4,10 +4,69 @@ import api from "../api/client";
 
 const initialForm = { type: "note", title: "", content: "", source_url: "" };
 const formatTypeLabel = (type) => type.charAt(0).toUpperCase() + type.slice(1);
+const STARTER_KITS = {
+  "hybrid search": [
+    "What is Hybrid Search?",
+    "BM25 vs Vector Search",
+    "Why combine keyword and semantic search?",
+    "Hybrid Search architecture example",
+    "When should Hybrid Search be used?"
+  ],
+  "vector databases": [
+    "What is a Vector Database?",
+    "Why pgvector vs Pinecone?",
+    "Similarity search basics",
+    "Index types in vector search"
+  ],
+  "spawn quality": [
+    "What is spawn quality in mushroom farming?",
+    "How poor spawn affects yield",
+    "How to identify healthy spawn",
+    "Best practices for mushroom spawn handling"
+  ],
+  "nikhilam sutra": [
+    "What is Nikhilam Sutra?",
+    "Subtraction from base numbers",
+    "Multiplication near powers of 10",
+    "Worked examples of Nikhilam"
+  ]
+};
+
+function getStarterPrompts(topic) {
+  const normalizedTopic = topic.trim().toLowerCase();
+  return (
+    STARTER_KITS[normalizedTopic] || [
+      `What is ${topic}?`,
+      `Why is ${topic} important?`,
+      `Core concepts of ${topic}`,
+      `Beginner examples of ${topic}`,
+      `Common mistakes in ${topic}`
+    ]
+  );
+}
+
+function buildStarterDraft(topic, prompt) {
+  return {
+    title: `${topic} - ${prompt.replace(/\?$/, "")}`,
+    content: `Topic: ${topic}
+
+Question:
+${prompt}
+
+Notes:
+- Definition:
+- Key concepts:
+- Example:
+- Why it matters:
+- Related topics:
+`
+  };
+}
 
 export default function Knowledge() {
   const [searchParams, setSearchParams] = useSearchParams();
   const formRef = useRef(null);
+  const contentRef = useRef(null);
   const [items, setItems] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [relatedItems, setRelatedItems] = useState({});
@@ -123,6 +182,7 @@ export default function Knowledge() {
   }, [items, query, searchResults, topicFilter]);
 
   const hasEmptyTopicState = Boolean(topicFilter) && !query.trim() && displayedItems.length === 0;
+  const starterPrompts = useMemo(() => (topicFilter ? getStarterPrompts(topicFilter) : []), [topicFilter]);
 
   useEffect(() => {
     if (!hasEmptyTopicState || !formRef.current) {
@@ -131,6 +191,21 @@ export default function Knowledge() {
 
     formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [hasEmptyTopicState]);
+
+  const handleStarterPrompt = (prompt) => {
+    const draft = buildStarterDraft(topicFilter, prompt);
+    setForm({
+      type: "note",
+      title: draft.title,
+      content: draft.content,
+      source_url: ""
+    });
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => {
+      contentRef.current?.focus();
+      contentRef.current?.setSelectionRange(contentRef.current.value.length, contentRef.current.value.length);
+    }, 250);
+  };
 
   return (
     <div className="page-grid">
@@ -153,6 +228,7 @@ export default function Knowledge() {
             onChange={(event) => setForm({ ...form, title: event.target.value })}
           />
           <textarea
+            ref={contentRef}
             placeholder="Content"
             rows="8"
             value={form.content}
@@ -199,10 +275,28 @@ export default function Knowledge() {
           </div>
           <div className="stack compact">
             {!displayedItems.length && topicFilter && !query.trim() && (
-              <p className="muted">
-                You haven&apos;t saved knowledge about {topicFilter} yet. Add your first note below to start learning
-                this topic.
-              </p>
+              <>
+                <p className="muted">
+                  You haven&apos;t saved knowledge about {topicFilter} yet. Add your first note below to start learning
+                  this topic.
+                </p>
+                <div className="starter-kit-card">
+                  <h3>Starter Kit for {topicFilter}</h3>
+                  <p className="muted">Choose one to create your first learning note.</p>
+                  <div className="tag-list">
+                    {starterPrompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        className="starter-chip"
+                        onClick={() => handleStarterPrompt(prompt)}
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
             {displayedItems.map((item) => (
               <article key={item.id} className="result-item">

@@ -307,6 +307,29 @@ select {
   box-shadow: 0 18px 40px rgba(37, 99, 235, 0.16);
 }
 
+.starter-kit-card {
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  padding: 1rem;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+}
+
+.starter-kit-card h3 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.starter-chip {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  padding: 0.65rem 0.9rem;
+}
+
+.starter-chip:hover {
+  background: #dbeafe;
+}
+
 .brain-map-toolbar {
   display: flex;
   gap: 0.75rem;
