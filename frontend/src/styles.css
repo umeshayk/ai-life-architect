@@ -228,6 +228,19 @@ select {
   white-space: normal;
 }
 
+.tag-button,
+.tag-link {
+  text-decoration: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.tag-button:hover,
+.tag-link:hover {
+  background: #bfdbfe;
+  color: #1e40af;
+}
+
 .result-item {
   border: 1px solid #e2e8f0;
   border-radius: 14px;

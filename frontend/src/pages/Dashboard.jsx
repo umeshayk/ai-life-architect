@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import KnowledgeGrowth from "../components/KnowledgeGrowth";
 
 export default function Dashboard({ user }) {
+  const navigate = useNavigate();
   const [insights, setInsights] = useState(null);
   const [growth, setGrowth] = useState(null);
   const [discovering, setDiscovering] = useState(false);
@@ -60,9 +62,14 @@ export default function Dashboard({ user }) {
         </div>
         <div className="tag-list">
           {(insights?.top_topics || []).map((topic) => (
-            <span key={topic.id || topic.name} className="tag">
+            <button
+              key={topic.id || topic.name}
+              type="button"
+              className="tag tag-button"
+              onClick={() => navigate(`/topics/${encodeURIComponent(topic.name)}`)}
+            >
               {topic.name} ({topic.count})
-            </span>
+            </button>
           ))}
         </div>
       </section>

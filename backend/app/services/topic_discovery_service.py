@@ -210,6 +210,7 @@ def normalize_topic_name(value: str) -> str:
     normalized = _normalize_words(value)
     if not normalized:
         return ""
+    normalized = " ".join(dict.fromkeys(normalized.split()))
 
     direct_label = _match_topic_patterns(normalized)
     if direct_label:

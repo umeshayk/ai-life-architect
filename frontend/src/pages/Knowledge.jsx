@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/client";
 
 const initialForm = { type: "note", title: "", content: "", source_url: "" };
@@ -70,6 +70,7 @@ Related topics:
 
 export default function Knowledge() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const formRef = useRef(null);
   const contentRef = useRef(null);
   const [items, setItems] = useState([]);
@@ -84,6 +85,7 @@ export default function Knowledge() {
   const [searchError, setSearchError] = useState("");
   const [searching, setSearching] = useState(false);
   const topicFilter = searchParams.get("topic")?.trim() || "";
+  const focusId = searchParams.get("focus")?.trim() || "";
 
   const loadItems = async () => {
     const response = await api.get("/knowledge");
@@ -223,6 +225,16 @@ export default function Knowledge() {
     formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [hasEmptyTopicState]);
 
+  useEffect(() => {
+    if (!focusId || !items.length) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      document.getElementById(`knowledge-item-${focusId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+  }, [focusId, items]);
+
   const handleStarterPrompt = (prompt) => {
     const draft = buildStarterDraft(topicFilter, prompt);
     setForm({
@@ -236,6 +248,10 @@ export default function Knowledge() {
       contentRef.current?.focus();
       contentRef.current?.setSelectionRange(contentRef.current.value.length, contentRef.current.value.length);
     }, 250);
+  };
+
+  const openTopic = (topic) => {
+    navigate(`/topics/${encodeURIComponent(topic)}`);
   };
 
   return (
@@ -361,9 +377,14 @@ export default function Knowledge() {
                 {Array.isArray(item.topics) && item.topics.length > 0 && (
                   <div className="tag-list">
                     {item.topics.map((topic) => (
-                      <span key={`${item.id}-topic-${topic.id}`} className="tag">
+                      <button
+                        key={`${item.id}-topic-${topic.id}`}
+                        type="button"
+                        className="tag tag-button"
+                        onClick={() => openTopic(topic.name)}
+                      >
                         {topic.name}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -379,7 +400,14 @@ export default function Knowledge() {
                           {relatedKnowledge[item.id]?.related_topics?.length ? (
                             <div className="tag-list">
                               {relatedKnowledge[item.id].related_topics.map((topic, index) => (
-                                <span key={`${item.id}-related-topic-${index}-${topic}`} className="tag">{topic}</span>
+                                <button
+                                  key={`${item.id}-related-topic-${index}-${topic}`}
+                                  type="button"
+                                  className="tag tag-button"
+                                  onClick={() => openTopic(topic)}
+                                >
+                                  {topic}
+                                </button>
                               ))}
                             </div>
                           ) : (
@@ -404,12 +432,14 @@ export default function Knowledge() {
                                       <p className="source-meta">Shared topics:</p>
                                       <div className="tag-list">
                                         {relatedNote.shared_topics.map((topic, topicIndex) => (
-                                          <span
+                                          <button
                                             key={`${item.id}-related-note-topic-${index}-${topicIndex}-${topic}`}
-                                            className="tag"
+                                            type="button"
+                                            className="tag tag-button"
+                                            onClick={() => openTopic(topic)}
                                           >
                                             {topic}
-                                          </span>
+                                          </button>
                                         ))}
                                       </div>
                                     </>

@@ -29,3 +29,16 @@ class TopicRebuildResponse(BaseModel):
 class TopicItemsResponse(BaseModel):
     topic: TopicSummary
     items: list[KnowledgeResponse]
+
+
+class TopicNoteSummary(BaseModel):
+    id: int
+    title: str
+    type: str
+    preview: str
+
+
+class TopicDetailResponse(BaseModel):
+    topic: str
+    notes: list[TopicNoteSummary]
+    related_topics: list[str]

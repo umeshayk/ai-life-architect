@@ -194,7 +194,7 @@ export default function Timeline() {
             {insights?.emerging_topics?.length ? (
               <div className="tag-list">
                 {insights.emerging_topics.map((topic) => (
-                  <span key={topic} className="tag">{topic}</span>
+                  <Link key={topic} to={`/topics/${encodeURIComponent(topic)}`} className="tag tag-link">{topic}</Link>
                 ))}
               </div>
             ) : (
@@ -221,7 +221,7 @@ export default function Timeline() {
           {insights?.suggested_topics?.length ? (
             <div className="tag-list">
               {insights.suggested_topics.map((topic) => (
-                <button key={topic} type="button" className="pill-button">{topic}</button>
+                <Link key={topic} to={`/topics/${encodeURIComponent(topic)}`} className="pill-button tag-link">{topic}</Link>
               ))}
             </div>
           ) : (
@@ -233,7 +233,7 @@ export default function Timeline() {
           {insights?.knowledge_gaps?.length ? (
             <div className="tag-list">
               {insights.knowledge_gaps.map((topic) => (
-                <span key={topic} className="tag">{topic}</span>
+                <Link key={topic} to={`/topics/${encodeURIComponent(topic)}`} className="tag tag-link">{topic}</Link>
               ))}
             </div>
           ) : (
@@ -282,7 +282,13 @@ export default function Timeline() {
                   </div>
                   <div className="tag-list">
                     {project.topics.map((topic) => (
-                      <span key={`${project.name}-${topic}`} className="tag">{topic}</span>
+                      <Link
+                        key={`${project.name}-${topic}`}
+                        to={`/topics/${encodeURIComponent(topic)}`}
+                        className="tag tag-link"
+                      >
+                        {topic}
+                      </Link>
                     ))}
                   </div>
                   <p className="source-meta">Next suggested step: {project.next_step || "Project is well covered"}</p>
@@ -454,9 +460,9 @@ export default function Timeline() {
         <div className="tag-list">
           {topTopics.length ? (
             topTopics.map((topic) => (
-              <span key={topic.name} className="tag">
+              <Link key={topic.name} to={`/topics/${encodeURIComponent(topic.name)}`} className="tag tag-link">
                 {topic.name} ({topic.count})
-              </span>
+              </Link>
             ))
           ) : (
             <p className="muted">No topics yet for this range.</p>
@@ -510,7 +516,9 @@ export default function Timeline() {
                     {!!item.topics.length && (
                       <div className="tag-list">
                         {item.topics.map((topic) => (
-                          <span key={`${item.id}-${topic}`} className="tag">{topic}</span>
+                          <Link key={`${item.id}-${topic}`} to={`/topics/${encodeURIComponent(topic)}`} className="tag tag-link">
+                            {topic}
+                          </Link>
                         ))}
                       </div>
                     )}

@@ -10,6 +10,7 @@ import AskAI from "./pages/AskAI";
 import Profile from "./pages/Profile";
 import BrainMap from "./pages/BrainMap";
 import Timeline from "./pages/Timeline";
+import Topic from "./pages/Topic";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", shortLabel: "DB" },
@@ -133,6 +134,14 @@ export default function App() {
               element={
                 <ProtectedRoute isAuthenticated={isAuthenticated}>
                   <Knowledge />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/topics/:topic"
+              element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <Topic />
                 </ProtectedRoute>
               }
             />
