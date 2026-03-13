@@ -1,15 +1,25 @@
 import { useEffect, useState } from "react";
 import api from "../api/client";
+import KnowledgeGrowth from "../components/KnowledgeGrowth";
 
 export default function Dashboard({ user }) {
   const [insights, setInsights] = useState(null);
+  const [growth, setGrowth] = useState(null);
   const [discovering, setDiscovering] = useState(false);
 
-  const loadInsights = () =>
-    api
-      .get("/api/insights/weekly")
-      .then((response) => setInsights(response.data))
-      .catch(() => setInsights(null));
+  const loadInsights = async () => {
+    try {
+      const [insightsResponse, growthResponse] = await Promise.all([
+        api.get("/api/insights/weekly"),
+        api.get("/api/timeline/growth")
+      ]);
+      setInsights(insightsResponse.data);
+      setGrowth(growthResponse.data);
+    } catch {
+      setInsights(null);
+      setGrowth(null);
+    }
+  };
 
   useEffect(() => {
     loadInsights();
@@ -80,6 +90,7 @@ export default function Dashboard({ user }) {
           ))}
         </ul>
       </section>
+      <KnowledgeGrowth growth={growth} />
     </div>
   );
 }

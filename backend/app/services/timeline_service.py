@@ -11,6 +11,8 @@ from app.models.knowledge import KnowledgeItem
 from app.schemas.evolution import EvolutionResponse, EvolutionSeries
 from app.services.forecast_service import build_knowledge_forecast
 from app.schemas.timeline import (
+    KnowledgeGrowthPoint,
+    KnowledgeGrowthResponse,
     KnowledgeForecast,
     KnowledgeProject,
     KnowledgeStrategy,
@@ -155,6 +157,69 @@ def get_timeline_evolution(
 
     all_items = _load_items(db, user_id, "all")
     return _build_evolution_data(items, all_items, normalized_range, normalized_group, bounded_limit)
+
+
+def get_knowledge_growth(db: Session, user_id: int) -> KnowledgeGrowthResponse:
+    all_items = list(reversed(_load_items(db, user_id, "all")))
+    if not all_items:
+        return KnowledgeGrowthResponse(
+            notes_count=0,
+            topics_count=0,
+            weekly_growth=0,
+            fastest_topic=None,
+            timeline=[],
+        )
+
+    weekly_growth = len(_load_items(db, user_id, "7d"))
+    topic_counts: Counter[str] = Counter()
+    cumulative_topics: set[str] = set()
+    monthly_notes: dict[str, int] = {}
+    monthly_topics: dict[str, int] = {}
+
+    current = all_items[0].created_at.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    item_index = 0
+    notes_total = 0
+    timeline: list[KnowledgeGrowthPoint] = []
+
+    while current <= end:
+        while item_index < len(all_items):
+            item_month = all_items[item_index].created_at.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            if item_month > current:
+                break
+
+            item = all_items[item_index]
+            notes_total += 1
+            for content_topic in item.content_topics:
+                if content_topic.topic is not None:
+                    topic_name = content_topic.topic.name
+                    cumulative_topics.add(topic_name)
+                    topic_counts[topic_name] += 1
+            item_index += 1
+
+        label = current.strftime("%b") if current.year == end.year else current.strftime("%b %Y")
+        monthly_notes[label] = notes_total
+        monthly_topics[label] = len(cumulative_topics)
+        timeline.append(
+            KnowledgeGrowthPoint(
+                month=label,
+                notes=monthly_notes[label],
+                topics=monthly_topics[label],
+            )
+        )
+
+        if current.month == 12:
+            current = current.replace(year=current.year + 1, month=1)
+        else:
+            current = current.replace(month=current.month + 1)
+
+    return KnowledgeGrowthResponse(
+        notes_count=len(all_items),
+        topics_count=len(cumulative_topics),
+        weekly_growth=weekly_growth,
+        fastest_topic=topic_counts.most_common(1)[0][0] if topic_counts else None,
+        timeline=timeline,
+    )
 
 
 def _build_evolution_data(

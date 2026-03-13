@@ -6,9 +6,9 @@ from app.models.user import User
 from app.routers.auth import get_current_user
 from app.schemas.action_plan import ActionPlanResponse
 from app.schemas.evolution import EvolutionResponse
-from app.schemas.timeline import TimelineResponse
+from app.schemas.timeline import KnowledgeGrowthResponse, TimelineResponse
 from app.services.action_plan_service import get_weekly_action_plan
-from app.services.timeline_service import get_timeline, get_timeline_evolution
+from app.services.timeline_service import get_knowledge_growth, get_timeline, get_timeline_evolution
 
 
 router = APIRouter(tags=["timeline"])
@@ -54,3 +54,11 @@ def read_timeline_action_plan(
         range_key=range,
         group_by=group_by,
     )
+
+
+@router.get("/api/timeline/growth", response_model=KnowledgeGrowthResponse)
+def read_timeline_growth(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return get_knowledge_growth(db, current_user.id)

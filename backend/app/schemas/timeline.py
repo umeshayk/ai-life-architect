@@ -32,6 +32,20 @@ class TimelineSummary(BaseModel):
     latest_item_title: str | None
 
 
+class KnowledgeGrowthPoint(BaseModel):
+    month: str
+    notes: int
+    topics: int
+
+
+class KnowledgeGrowthResponse(BaseModel):
+    notes_count: int
+    topics_count: int
+    weekly_growth: int
+    fastest_topic: str | None
+    timeline: list[KnowledgeGrowthPoint]
+
+
 class StrategyStep(BaseModel):
     topic: str
     completed: bool
