@@ -24,6 +24,14 @@ class SearchResultItem(SourceItem):
     pass
 
 
+class AskAIInsights(BaseModel):
+    dominant_topic: str | None = None
+    next_step: str | None = None
+    top_project: str | None = None
+    project_progress: int | None = None
+
+
 class AskAIResponse(BaseModel):
     answer: str
     sources: list[SourceItem]
+    insights: AskAIInsights | None = None

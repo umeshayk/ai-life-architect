@@ -25,15 +25,65 @@ def build_context_block(matches: list[SearchMatch]) -> str:
     )
 
 
-def ask_ollama(question: str, matches: list[SearchMatch]) -> str:
+def build_mentor_context_block(mentor_context: dict | None) -> str:
+    if not mentor_context:
+        return "No higher-level knowledge insights available."
+
+    projects = mentor_context.get("projects") or []
+    strategies = mentor_context.get("strategies") or []
+    weekly_plan = mentor_context.get("weekly_plan") or []
+    forecast = mentor_context.get("forecast") or []
+
+    project_lines = [
+        f"- {project['name']}: {project['progress']}% complete, next step: {project.get('next_step') or 'None'}"
+        for project in projects[:3]
+    ] or ["- None"]
+    strategy_lines = [
+        f"- {strategy['domain']}: " + ", ".join(
+            f"{step['topic']} ({'done' if step['completed'] else 'next'})" for step in strategy["path"][:5]
+        )
+        for strategy in strategies[:3]
+    ] or ["- None"]
+    plan_lines = [
+        f"- {plan['domain']}: {plan['action']} because {plan['reason']}"
+        for plan in weekly_plan[:3]
+    ] or ["- None"]
+    forecast_lines = [
+        f"- {entry['domain']}: {entry['confidence']}% confidence, {entry['estimated_mastery_months']} month estimate"
+        for entry in forecast[:3]
+    ] or ["- None"]
+
+    return (
+        "Topic Intelligence:\n"
+        f"- Dominant Topic: {mentor_context.get('dominant_topic') or 'None'}\n"
+        f"- Top Topics: {', '.join(mentor_context.get('top_topics') or []) or 'None'}\n"
+        f"- Emerging Topics: {', '.join(mentor_context.get('emerging_topics') or []) or 'None'}\n"
+        f"- Knowledge Gaps: {', '.join(mentor_context.get('knowledge_gaps') or []) or 'None'}\n"
+        f"- Suggested Exploration: {', '.join(mentor_context.get('suggested_topics') or []) or 'None'}\n\n"
+        "Project Intelligence:\n"
+        + "\n".join(project_lines)
+        + "\n\nLearning Strategy:\n"
+        + "\n".join(strategy_lines)
+        + "\n\nWeekly Action Plan:\n"
+        + "\n".join(plan_lines)
+        + "\n\nForecast:\n"
+        + "\n".join(forecast_lines)
+    )
+
+
+def ask_ollama(question: str, matches: list[SearchMatch], mentor_context: dict | None = None) -> str:
     context = build_context_block(matches)
+    intelligence = build_mentor_context_block(mentor_context)
     prompt = (
-        "You are a grounded assistant for a personal knowledge base.\n"
-        "Answer only from the provided sources.\n"
-        "If the answer is not supported by the sources, say: "
+        "You are a grounded personal knowledge mentor for a user's saved knowledge base.\n"
+        "Answer only from the provided saved knowledge and generated knowledge insights.\n"
+        "Do not invent topics, projects, or progress that are not in the context.\n"
+        "If the answer is not supported by the context, say: "
         "'I could not verify that from your saved knowledge.'\n"
-        "Do not hallucinate. Keep the answer concise and practical.\n\n"
-        f"Sources:\n{context or 'No matching knowledge found.'}\n\n"
+        "Do not hallucinate. Keep the answer concise, practical, and mentor-like.\n"
+        "When useful, recommend the next concrete step.\n\n"
+        f"User Knowledge Context:\n{context or 'No matching knowledge found.'}\n\n"
+        f"{intelligence}\n\n"
         f"Question: {question}\n"
         "Answer:"
     )
