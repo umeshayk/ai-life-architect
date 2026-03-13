@@ -6,6 +6,7 @@ import api from "../api/client";
 const GROUP_COLORS = {
   AI: "#3b82f6",
   Agriculture: "#22c55e",
+  Bridge: "#14b8a6",
   Math: "#a855f7",
   Mathematics: "#a855f7",
   Business: "#f97316",
@@ -17,6 +18,7 @@ const GROUP_COLORS = {
 const DOMAIN_ANCHORS = {
   AI: { x: 0.22, y: 0.42 },
   Agriculture: { x: 0.52, y: 0.22 },
+  Bridge: { x: 0.56, y: 0.52 },
   Math: { x: 0.52, y: 0.82 },
   Mathematics: { x: 0.52, y: 0.82 },
   Business: { x: 0.8, y: 0.45 },
@@ -46,6 +48,9 @@ function graphColor(group, importance = 0, dimmed = false) {
 }
 
 function clusterDisplayLabel(group, leader) {
+  if (group === "Bridge") {
+    return "BRIDGES";
+  }
   if (group === "Business" && leader?.label && /property|real estate/i.test(leader.label)) {
     return "REAL ESTATE";
   }
@@ -557,7 +562,7 @@ export default function BrainMap() {
               Suggested next step: {focusContext.connectedLabels[0] ? `Explore ${focusContext.connectedLabels[0]}` : "Open this topic to review its notes."}
             </p>
             <div className="brain-detail-actions">
-              {selectedNode.type === "topic" && (
+              {(selectedNode.type === "topic" || selectedNode.type === "bridge") && (
                 <button
                   type="button"
                   className="secondary-button"

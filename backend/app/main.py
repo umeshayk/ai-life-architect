@@ -27,6 +27,9 @@ def startup() -> None:
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     with engine.begin() as connection:
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        connection.execute(
+            text("ALTER TABLE IF EXISTS topics ADD COLUMN IF NOT EXISTS type VARCHAR(30) NOT NULL DEFAULT 'standard'")
+        )
     Base.metadata.create_all(bind=engine)
 
 

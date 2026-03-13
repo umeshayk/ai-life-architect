@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.schemas.graph import GraphEdge, GraphNode, GraphResponse
+from app.services.topic_bridge_service import build_topic_bridges
 from app.services.topic_hierarchy_service import build_hierarchy_graph
 
 
@@ -33,6 +34,8 @@ TOPIC_CATEGORY_MAP = {
 
 
 def _topic_group(topic_name: str) -> str:
+    if topic_name.startswith("AI in ") or " and " in topic_name:
+        return "Bridge"
     if topic_name == "Real Estate" or topic_name.endswith(" Property"):
         return "Business"
     return TOPIC_CATEGORY_MAP.get(topic_name, "General")
@@ -104,9 +107,16 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
         {topic_name: topic_to_titles[topic_name] for topic_name in top_topic_names},
         _topic_group,
     )
+    bridge_nodes, bridge_edges = build_topic_bridges(
+        db,
+        user_id,
+        top_topic_names,
+        {topic_name: topic_to_titles[topic_name] for topic_name in top_topic_names},
+        _topic_group,
+    )
 
     connection_counts: Counter[str] = Counter()
-    for edge in edges + hierarchy_edges:
+    for edge in edges + hierarchy_edges + bridge_edges:
         connection_counts[edge.source] += 1
         connection_counts[edge.target] += 1
 
@@ -137,7 +147,15 @@ def build_graph_for_user(db: Session, user_id: int) -> GraphResponse:
             node.size = 0
             nodes.append(node)
             existing_node_ids.add(node.id)
+    for node in bridge_nodes:
+        if node.id not in existing_node_ids:
+            node.importance = round(node.importance + connection_counts[node.id], 2)
+            node.connection_count = connection_counts[node.id]
+            node.size = 0
+            nodes.append(node)
+            existing_node_ids.add(node.id)
     edges.extend(hierarchy_edges)
+    edges.extend(bridge_edges)
 
     for node in nodes:
         node.size = 4 + min(28, node.importance * 2)

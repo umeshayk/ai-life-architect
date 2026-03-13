@@ -1,13 +1,12 @@
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import desc, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
-from app.models.topic import Topic
-from app.services.topic_service import build_stable_topic_counts, discover_topics, get_topics_with_counts, rebuild_topics_for_user
+from app.services.topic_service import build_stable_topic_counts, discover_topics, get_topics_with_counts
 
 
 def suggestion_for_topic(topic_name: str) -> str:
@@ -25,10 +24,19 @@ def suggestion_for_topic(topic_name: str) -> str:
     return f"You are building depth around {topic_name}. Consider creating a focused collection or summary note."
 
 
+def _to_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def build_weekly_insights(db: Session, user_id: int) -> dict:
-    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    week_ago = datetime.now(UTC) - timedelta(days=7)
     items = db.scalars(
         select(KnowledgeItem)
+        .options(selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic))
         .where(KnowledgeItem.user_id == user_id)
         .order_by(desc(KnowledgeItem.created_at))
     ).all()
@@ -40,7 +48,18 @@ def build_weekly_insights(db: Session, user_id: int) -> dict:
     )
     if items and existing_topic_link is None:
         discover_topics(db, user_id)
-    recent_items = [item for item in items if item.created_at >= week_ago]
+        items = db.scalars(
+            select(KnowledgeItem)
+            .options(selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic))
+            .where(KnowledgeItem.user_id == user_id)
+            .order_by(desc(KnowledgeItem.created_at))
+        ).all()
+
+    recent_items = [
+        item
+        for item in items
+        if (_to_utc(item.created_at) or week_ago) >= week_ago
+    ]
     top_tags_counter: Counter[str] = Counter()
     for item in recent_items or items[:10]:
         for tag in (item.tags or "").split(","):
@@ -48,13 +67,19 @@ def build_weekly_insights(db: Session, user_id: int) -> dict:
             if cleaned:
                 top_tags_counter[cleaned] += 1
 
-    topic_rows = db.execute(
-        select(Topic.name, Topic.id)
-        .join(ContentTopic, ContentTopic.topic_id == Topic.id)
-        .join(KnowledgeItem, KnowledgeItem.id == ContentTopic.knowledge_id)
-        .where(KnowledgeItem.user_id == user_id, KnowledgeItem.created_at >= week_ago)
-    ).all()
-    topic_counts = build_stable_topic_counts([name for name, _ in topic_rows])
+    topic_names_in_range: list[str] = []
+    for item in recent_items:
+        seen_topics: set[str] = set()
+        for content_topic in item.content_topics:
+            if content_topic.topic is None or not content_topic.topic.name:
+                continue
+            topic_name = content_topic.topic.name
+            if topic_name in seen_topics:
+                continue
+            seen_topics.add(topic_name)
+            topic_names_in_range.append(topic_name)
+
+    topic_counts = build_stable_topic_counts(topic_names_in_range)
     topic_lookup = {
         topic.name: topic.id
         for topic, _ in get_topics_with_counts(db, user_id)
