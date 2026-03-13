@@ -55,3 +55,6 @@ class KnowledgeSuggestion(BaseModel):
     reason: str
     confidence: float
     domain: str
+    topic_exists: bool = False
+    state: str = "missing"
+    action: str = "add"

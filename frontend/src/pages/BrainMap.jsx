@@ -604,7 +604,11 @@ export default function BrainMap() {
     navigate(`/knowledge?topic=${encodeURIComponent(suggestion.suggested_topic)}`);
   };
 
-  const handleAddSuggestedTopic = (suggestion) => {
+  const handleSuggestionAction = (suggestion) => {
+    if (suggestion.action === "focus") {
+      handleSuggestedTopicClick(suggestion);
+      return;
+    }
     navigate(`/knowledge?topic=${encodeURIComponent(suggestion.suggested_topic)}`);
   };
 
@@ -791,6 +795,7 @@ export default function BrainMap() {
         <aside className="brain-map-side-column">
           <section className="card brain-side-card">
             <h3>Suggested Topics</h3>
+            <p className="muted">Suggested learning path</p>
             {suggestionsError && <p className="error-text">{suggestionsError}</p>}
             {!suggestionsError && suggestions.length === 0 ? (
           <p className="muted">No strong topic gaps detected yet. Keep adding knowledge to unlock suggestions.</p>
@@ -813,10 +818,14 @@ export default function BrainMap() {
                 <div className="brain-detail-actions">
                   <button
                     type="button"
-                    className="secondary-button"
-                    onClick={() => handleAddSuggestedTopic(suggestion)}
+                    className={`suggestion-action-button ${suggestion.action === "focus" ? "focus" : "add"}`}
+                    onClick={() => handleSuggestionAction(suggestion)}
                   >
-                    Add Topic
+                    <span
+                      className={`suggestion-action-icon ${suggestion.action === "focus" ? "focus" : "add"}`}
+                      aria-hidden="true"
+                    />
+                    <span>{suggestion.action === "focus" ? "Focus Topic" : "Add Topic"}</span>
                   </button>
                 </div>
                   </article>
@@ -911,3 +920,5 @@ export default function BrainMap() {
     </div>
   );
 }
+
+
