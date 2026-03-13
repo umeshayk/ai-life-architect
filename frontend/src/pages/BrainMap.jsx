@@ -73,6 +73,7 @@ export default function BrainMap() {
   const fgRef = useRef(null);
   const shellRef = useRef(null);
   const didAutoFitRef = useRef(false);
+  const lastSearchFocusRef = useRef("");
   const [graph, setGraph] = useState({ nodes: [], edges: [] });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
@@ -116,24 +117,32 @@ export default function BrainMap() {
     };
   }, [graph]);
 
-  const filteredData = useMemo(() => {
+  const filteredData = useMemo(
+    () => ({
+      nodes: graphWithDegree.nodes.map((node) => ({ ...node })),
+      links: graphWithDegree.edges.map((edge) => ({ ...edge }))
+    }),
+    [graphWithDegree]
+  );
+
+  const searchMatches = useMemo(() => {
     const query = search.trim().toLowerCase();
-    const nodes = query
-      ? graphWithDegree.nodes.filter((node) => node.label.toLowerCase().includes(query))
-      : graphWithDegree.nodes;
-    const nodeIds = new Set(nodes.map((node) => node.id));
-    const links = graphWithDegree.edges
-      .filter((edge) => {
-        const sourceId = typeof edge.source === "object" ? edge.source.id : edge.source;
-        const targetId = typeof edge.target === "object" ? edge.target.id : edge.target;
-        return nodeIds.has(sourceId) && nodeIds.has(targetId);
+    if (!query) {
+      return [];
+    }
+
+    return [...graphWithDegree.nodes]
+      .filter((node) => node.label.toLowerCase().includes(query))
+      .sort((left, right) => {
+        const leftStarts = left.label.toLowerCase().startsWith(query) ? 1 : 0;
+        const rightStarts = right.label.toLowerCase().startsWith(query) ? 1 : 0;
+        if (leftStarts !== rightStarts) {
+          return rightStarts - leftStarts;
+        }
+        return (right.degree || 0) - (left.degree || 0);
       })
-      .map((edge) => ({ ...edge }));
-    return {
-      nodes: nodes.map((node) => ({ ...node })),
-      links
-    };
-  }, [graphWithDegree, search]);
+      .slice(0, 6);
+  }, [graphWithDegree.nodes, search]);
 
   const selectedNode = graphWithDegree.nodes.find((node) => node.id === selectedNodeId) || null;
   const selectedGroup = selectedNode?.group || null;
@@ -201,6 +210,33 @@ export default function BrainMap() {
     }
   };
 
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
+    if (!searchMatches.length) {
+      return;
+    }
+    focusNode(searchMatches[0].id);
+  };
+
+  useEffect(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) {
+      lastSearchFocusRef.current = "";
+      return;
+    }
+    if (!searchMatches.length) {
+      return;
+    }
+
+    const nextFocusKey = `${query}:${searchMatches[0].id}`;
+    if (lastSearchFocusRef.current === nextFocusKey) {
+      return;
+    }
+
+    lastSearchFocusRef.current = nextFocusKey;
+    focusNode(searchMatches[0].id);
+  }, [search, searchMatches]);
+
   const focusGroup = (group) => {
     const candidate = [...filteredData.nodes]
       .filter((node) => node.group === group)
@@ -214,6 +250,8 @@ export default function BrainMap() {
   const handleReset = () => {
     if (fgRef.current && filteredData.nodes.length) {
       setSelectedNodeId(null);
+      setSearch("");
+      lastSearchFocusRef.current = "";
       fgRef.current.zoomToFit(600, 40);
     }
   };
@@ -227,15 +265,32 @@ export default function BrainMap() {
 
       <section className="card">
         <div className="brain-map-toolbar">
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Filter topics by label"
-          />
+          <form className="brain-map-search" onSubmit={handleSearchSubmit}>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search and focus a topic"
+            />
+          </form>
           <button type="button" className="secondary-button" onClick={handleReset}>
             Reset View
           </button>
         </div>
+        {!!searchMatches.length && (
+          <div className="brain-map-search-results">
+            {searchMatches.map((match) => (
+              <button
+                key={match.id}
+                type="button"
+                className="brain-map-search-result"
+                onClick={() => focusNode(match.id)}
+              >
+                <span>{match.label}</span>
+                <span className="muted">{match.group}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="brain-map-legend">
           {availableGroups.map(({ group, color, hasNodes }) => (
             <button
@@ -288,14 +343,14 @@ export default function BrainMap() {
                 const sourceId = typeof link.source === "object" ? link.source.id : link.source;
                 const targetId = typeof link.target === "object" ? link.target.id : link.target;
                 const isConnected = sourceId === selectedNodeId || targetId === selectedNodeId;
-                return isConnected ? "rgba(37, 99, 235, 0.82)" : "rgba(148, 163, 184, 0.14)";
+                return isConnected ? "rgba(37, 99, 235, 0.9)" : "rgba(148, 163, 184, 0.08)";
               }}
-              nodeLabel="id"
+              nodeLabel={(node) => `${node.label} (${node.group || "General"})`}
               nodeColor={(node) => {
                 if (!selectedNodeId) {
                   return graphColor(node.group);
                 }
-                return focusContext.neighborIds.has(node.id) ? graphColor(node.group) : "rgba(203, 213, 225, 0.28)";
+                return focusContext.neighborIds.has(node.id) ? graphColor(node.group) : "rgba(203, 213, 225, 0.14)";
               }}
               enableNodeDrag={true}
               onNodeHover={(node) => setHoveredNodeId(node?.id || null)}
@@ -325,14 +380,14 @@ export default function BrainMap() {
 
                 if (isSelected) {
                   ctx.beginPath();
-                  ctx.arc(node.x, node.y, radius + 4, 0, 2 * Math.PI, false);
+                  ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI, false);
                   ctx.strokeStyle = "#f97316";
-                  ctx.lineWidth = 2.5;
+                  ctx.lineWidth = 3.5;
                   ctx.stroke();
                 } else if (selectedNodeId && isNeighbor) {
                   ctx.beginPath();
                   ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI, false);
-                  ctx.strokeStyle = "rgba(37, 99, 235, 0.42)";
+                  ctx.strokeStyle = "rgba(37, 99, 235, 0.58)";
                   ctx.lineWidth = 2;
                   ctx.stroke();
                 }

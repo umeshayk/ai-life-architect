@@ -55,11 +55,13 @@ def build_weekly_insights(db: Session, user_id: int) -> dict:
         .where(KnowledgeItem.user_id == user_id, KnowledgeItem.created_at >= week_ago)
     ).all()
     topic_counts = Counter(name for name, _ in topic_rows)
-    topic_lookup = {name: topic_id for name, topic_id in topic_rows}
+    topic_lookup = {
+        topic.name: topic.id
+        for topic, _ in get_topics_with_counts(db, user_id)
+    }
     if not topic_counts:
         all_topics = get_topics_with_counts(db, user_id)
         topic_counts = Counter({topic.name: count for topic, count in all_topics})
-        topic_lookup = {topic.name: topic.id for topic, _ in all_topics}
 
     top_topics = [
         {"id": topic_lookup.get(name, 0), "name": name, "count": count}
