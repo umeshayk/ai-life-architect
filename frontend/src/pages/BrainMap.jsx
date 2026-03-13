@@ -18,6 +18,10 @@ function graphColor(group) {
   return GROUP_COLORS[group] || GROUP_COLORS.General;
 }
 
+function nodeRadius(node) {
+  return Math.min(28, 4 + (node.degree || 0) * 2);
+}
+
 export default function BrainMap() {
   const navigate = useNavigate();
   const fgRef = useRef(null);
@@ -207,7 +211,7 @@ export default function BrainMap() {
               height={graphSize.height}
               graphData={filteredData}
               nodeRelSize={6}
-              nodeVal={(node) => Math.min(32, 5 + (node.degree || 1) * 3)}
+              nodeVal={(node) => nodeRadius(node)}
               cooldownTicks={160}
               onEngineStop={() => {
                 if (!didAutoFitRef.current && fgRef.current) {
@@ -216,13 +220,14 @@ export default function BrainMap() {
                 }
               }}
               linkWidth={(link) => {
+                const baseWidth = 1 + (link.weight || 1);
                 if (!selectedNodeId) {
-                  return 1.6;
+                  return Math.min(6, baseWidth);
                 }
                 const sourceId = typeof link.source === "object" ? link.source.id : link.source;
                 const targetId = typeof link.target === "object" ? link.target.id : link.target;
                 const isConnected = sourceId === selectedNodeId || targetId === selectedNodeId;
-                return isConnected ? 2.8 : 0.8;
+                return isConnected ? Math.min(7, baseWidth + 0.8) : 0.8;
               }}
               linkColor={(link) => {
                 if (!selectedNodeId) {
@@ -246,10 +251,11 @@ export default function BrainMap() {
               nodeCanvasObject={(node, ctx, globalScale) => {
                 const label = node.label;
                 const fontSize = Math.max(11, 15 / globalScale);
-                const radius = Math.min(32, 5 + (node.degree || 1) * 3);
+                const radius = nodeRadius(node);
                 const isSelected = selectedNodeId === node.id;
                 const isNeighbor = focusContext.neighborIds.has(node.id);
                 const isDimmed = selectedNodeId && !isNeighbor;
+                const showLabel = isSelected || hoveredNodeId === node.id || (node.degree || 0) >= 2;
 
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
@@ -258,9 +264,9 @@ export default function BrainMap() {
                 ctx.fill();
                 ctx.globalAlpha = 1;
 
-                if (isSelected || hoveredNodeId === node.id) {
+                if (showLabel) {
                   ctx.font = `${fontSize}px Segoe UI`;
-                  ctx.fillStyle = "#0f172a";
+                  ctx.fillStyle = isDimmed ? "rgba(15, 23, 42, 0.35)" : "#0f172a";
                   ctx.textAlign = "center";
                   ctx.fillText(label, node.x, node.y + radius + fontSize + 2);
                 }
