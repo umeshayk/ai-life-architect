@@ -12,6 +12,7 @@ from app.models.user import User
 from app.routers.auth import get_current_user
 from app.routers.knowledge import serialize_knowledge
 from app.schemas.topic import (
+    KnowledgeSuggestion,
     TopicCleanupResponse,
     TopicDetailResponse,
     TopicItemsResponse,
@@ -19,6 +20,7 @@ from app.schemas.topic import (
     TopicRebuildResponse,
     TopicSummary,
 )
+from app.services.knowledge_gap_service import build_knowledge_gap_suggestions
 from app.services.retrieval import _extract_item_concepts
 from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
 
@@ -32,6 +34,14 @@ def _build_topic_note_summary(item: KnowledgeItem) -> TopicNoteSummary:
     if len(preview_source) > 150:
         preview = f"{preview}..."
     return TopicNoteSummary(id=item.id, title=item.title, type=item.type, preview=preview or "No preview available.")
+
+
+
+
+@router.get("/api/knowledge-suggestions", response_model=list[KnowledgeSuggestion])
+def get_knowledge_suggestions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    suggestions = build_knowledge_gap_suggestions(db, current_user.id)
+    return [KnowledgeSuggestion(**suggestion) for suggestion in suggestions]
 
 
 @router.get("/api/topics", response_model=list[TopicSummary])

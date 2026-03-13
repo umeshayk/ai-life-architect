@@ -248,7 +248,19 @@ export default function BrainMap() {
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestionsError, setSuggestionsError] = useState("");
   const [graphSize, setGraphSize] = useState({ width: 1200, height: 920 });
+
+  useEffect(() => {
+    api
+      .get("/api/knowledge-suggestions")
+      .then((response) => {
+        setSuggestions(response.data || []);
+        setSuggestionsError("");
+      })
+      .catch((err) => setSuggestionsError(err.response?.data?.detail || "Unable to load suggested topics."));
+  }, []);
 
   useEffect(() => {
     const params = { level: currentLevel };
@@ -536,6 +548,23 @@ export default function BrainMap() {
     openContext({ level: 3, domain: currentDomain || selectedNode?.group || "", topic: label });
   };
 
+  const handleSuggestedTopicClick = (suggestion) => {
+    const existingNode = graphWithDegree.nodes.find((node) => node.label.toLowerCase() === suggestion.suggested_topic.toLowerCase());
+    if (existingNode) {
+      if (existingNode.type === "domain") {
+        openContext({ level: 2, domain: existingNode.label });
+        return;
+      }
+      openContext({ level: 3, domain: suggestion.domain || existingNode.group || currentDomain, topic: existingNode.label });
+      return;
+    }
+    navigate(`/knowledge?topic=${encodeURIComponent(suggestion.suggested_topic)}`);
+  };
+
+  const handleAddSuggestedTopic = (suggestion) => {
+    navigate(`/knowledge?topic=${encodeURIComponent(suggestion.suggested_topic)}`);
+  };
+
   return (
     <div className="stack">
       <section className="card">
@@ -543,8 +572,9 @@ export default function BrainMap() {
         <p className="muted">Explore how your saved knowledge expands from domains into topics, relationships, bridges, and notes.</p>
       </section>
 
-      <section className="card">
-        <div className="brain-map-toolbar">
+      <section className="brain-map-layout">
+        <div className="card brain-map-main-card">
+          <div className="brain-map-toolbar">
           <form className="brain-map-search" onSubmit={handleSearchSubmit}>
             <input
               value={search}
@@ -591,8 +621,8 @@ export default function BrainMap() {
           ))}
         </div>
 
-        {error && <p className="error-text">{error}</p>}
-        {!error && filteredData.nodes.length === 0 ? (
+          {error && <p className="error-text">{error}</p>}
+          {!error && filteredData.nodes.length === 0 ? (
           <p className="muted">No graph data available yet. Add more topic-linked knowledge first.</p>
         ) : (
           <div ref={shellRef} className="brain-map-canvas force-graph-shell">
@@ -712,11 +742,48 @@ export default function BrainMap() {
               }}
             />
           </div>
-        )}
-      </section>
+          )}
+        </div>
 
-      <section className="card">
-        <h3>Details</h3>
+        <aside className="brain-map-side-column">
+          <section className="card brain-side-card">
+            <h3>Suggested Topics</h3>
+            {suggestionsError && <p className="error-text">{suggestionsError}</p>}
+            {!suggestionsError && suggestions.length === 0 ? (
+          <p className="muted">No strong topic gaps detected yet. Keep adding knowledge to unlock suggestions.</p>
+        ) : (
+              <div className="stack compact">
+                {suggestions.map((suggestion) => (
+                  <article key={suggestion.suggested_topic} className="result-item suggestion-card">
+                <div className="row-between">
+                  <button
+                    type="button"
+                    className="link-button related-note-button"
+                    onClick={() => handleSuggestedTopicClick(suggestion)}
+                  >
+                    {suggestion.suggested_topic}
+                  </button>
+                  <span className="tag">{suggestion.domain}</span>
+                </div>
+                <p className="muted">{suggestion.reason}</p>
+                <p className="source-meta">Confidence: {Math.round((suggestion.confidence || 0) * 100)}%</p>
+                <div className="brain-detail-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => handleAddSuggestedTopic(suggestion)}
+                  >
+                    Add Topic
+                  </button>
+                </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="card brain-side-card">
+            <h3>Details</h3>
         {!selectedNode ? (
           <p className="muted">Click a node to inspect its related knowledge or zoom deeper into the map.</p>
         ) : (
@@ -786,6 +853,8 @@ export default function BrainMap() {
             </div>
           </div>
         )}
+          </section>
+        </aside>
       </section>
     </div>
   );

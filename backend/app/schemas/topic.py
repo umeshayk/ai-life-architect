@@ -47,3 +47,11 @@ class TopicDetailResponse(BaseModel):
     topic: str
     notes: list[TopicNoteSummary]
     related_topics: list[str]
+
+
+
+class KnowledgeSuggestion(BaseModel):
+    suggested_topic: str
+    reason: str
+    confidence: float
+    domain: str
