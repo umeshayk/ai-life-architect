@@ -478,6 +478,8 @@ export default function BrainMap() {
   const didAutoFitRef = useRef(false);
   const lastSearchFocusRef = useRef("");
   const pendingCenterLabelRef = useRef("");
+  const initialExpansionPanelRef = useRef(true);
+  const initialDetailsPanelRef = useRef(true);
   const [graph, setGraph] = useState({ nodes: [], edges: [], level: 1, domain: null, topic: null, available_domains: [] });
   const [currentLevel, setCurrentLevel] = useState(1);
   const [currentDomain, setCurrentDomain] = useState("");
@@ -501,6 +503,20 @@ export default function BrainMap() {
   const [addingSuggestion, setAddingSuggestion] = useState("");
   const [refreshingExpansion, setRefreshingExpansion] = useState(false);
   const [graphSize, setGraphSize] = useState({ width: 1200, height: 920 });
+  const [userSelectedNode, setUserSelectedNode] = useState(false);
+  const [panelState, setPanelState] = useState({
+    learningPaths: false,
+    expansion: false,
+    mentor: false,
+    details: false
+  });
+
+  const togglePanel = (panelKey) => {
+    setPanelState((current) => ({
+      ...current,
+      [panelKey]: !current[panelKey]
+    }));
+  };
 
   const loadGraphView = async ({ level, domain = "", topic = "" }) => {
     const params = { level };
@@ -529,6 +545,7 @@ export default function BrainMap() {
   useEffect(() => {
     setError("");
     setSelectedNodeId(null);
+    setUserSelectedNode(false);
     loadGraphView({ level: currentLevel, domain: currentDomain, topic: currentTopic })
       .catch((err) => setError(err.response?.data?.detail || "Unable to load the brain map."));
   }, [currentLevel, currentDomain, currentTopic]);
@@ -622,19 +639,44 @@ export default function BrainMap() {
 
   const selectedNode = graphWithDegree.nodes.find((node) => node.id === selectedNodeId) || null;
   const focusedTopicLabel = selectedNode?.type === "topic" ? selectedNode.label : currentTopic || graph.topic || "";
+  const hasFocusedTopic = Boolean(focusedTopicLabel && (selectedNode?.type === "topic" || (graph.level || currentLevel) >= 3));
   const hoveredNode = graphWithDegree.nodes.find((node) => node.id === hoveredNodeId) || null;
   const shouldShowSearchMatches = useMemo(() => {
     const query = search.trim().toLowerCase();
     const activeTopicLabel = (currentTopic || graph.topic || selectedNode?.label || "").trim().toLowerCase();
+    const activeLevel = graph.level || currentLevel;
     if (!query || !searchMatches.length) {
+      return false;
+    }
+    if (activeLevel >= 4) {
       return false;
     }
     if (activeTopicLabel && query === activeTopicLabel) {
       return false;
     }
     return true;
-  }, [currentTopic, graph.topic, search, searchMatches.length, selectedNode?.label]);
+  }, [currentLevel, currentTopic, graph.level, graph.topic, search, searchMatches.length, selectedNode?.label]);
   const selectedGroup = selectedNode?.group || graph.domain || null;
+
+  useEffect(() => {
+    if (initialExpansionPanelRef.current) {
+      initialExpansionPanelRef.current = false;
+      return;
+    }
+    if (hasFocusedTopic) {
+      setPanelState((current) => (current.expansion ? current : { ...current, expansion: true }));
+    }
+  }, [hasFocusedTopic]);
+
+  useEffect(() => {
+    if (initialDetailsPanelRef.current) {
+      initialDetailsPanelRef.current = false;
+      return;
+    }
+    if (selectedNode && userSelectedNode) {
+      setPanelState((current) => (current.details ? current : { ...current, details: true }));
+    }
+  }, [selectedNode, userSelectedNode]);
   const availableGroups = useMemo(() => {
     const groups = new Set(filteredData.nodes.map((node) => node.group));
     return Object.entries(GROUP_COLORS).map(([group, color]) => ({
@@ -663,7 +705,7 @@ export default function BrainMap() {
     if (!focusedTopicLabel) {
       setExpansionSuggestions([]);
       setExpansionTopic("");
-      setExpansionSource("fallback");
+      setExpansionSource("rules");
       setExpansionContextTopics([]);
       setExpansionError("");
       return;
@@ -675,13 +717,13 @@ export default function BrainMap() {
       .then((response) => {
         setExpansionSuggestions(response.data?.suggestions || []);
         setExpansionTopic(response.data?.topic || focusedTopicLabel);
-        setExpansionSource(response.data?.source || "fallback");
+        setExpansionSource(response.data?.source || (response.data?.cached ? "cache" : "rules"));
         setExpansionContextTopics(response.data?.context_topics || []);
       })
       .catch((err) => {
         setExpansionSuggestions([]);
         setExpansionTopic(focusedTopicLabel);
-        setExpansionSource("fallback");
+        setExpansionSource("rules");
         setExpansionContextTopics([]);
         setExpansionError(err.response?.data?.detail || "Unable to load knowledge expansion suggestions.");
       })
@@ -818,6 +860,7 @@ export default function BrainMap() {
   }, [clusterAnchors, currentLevel, filteredData, graphSize, groupLeaders]);
 
   const focusNode = (nodeId) => {
+    setUserSelectedNode(true);
     setSelectedNodeId(nodeId);
     const targetNode = filteredData.nodes.find((node) => node.id === nodeId);
     if (targetNode && fgRef.current) {
@@ -832,6 +875,7 @@ export default function BrainMap() {
     setCurrentDomain(domain);
     setCurrentTopic(topic);
     setSelectedNodeId(null);
+    setUserSelectedNode(false);
     lastSearchFocusRef.current = "";
   };
 
@@ -854,7 +898,7 @@ export default function BrainMap() {
       openContext({ level: 4, domain: currentDomain || node.group, topic: node.label });
       return;
     }
-
+    setUserSelectedNode(true);
     focusNode(node.id);
   };
 
@@ -895,12 +939,13 @@ export default function BrainMap() {
     }
 
     if (node.type === "topic") {
+      setUserSelectedNode(true);
       setSelectedNodeId(node.id);
       pendingCenterLabelRef.current = node.label;
       await expandTopicNode(node);
       return;
     }
-
+    setUserSelectedNode(true);
     focusNode(node.id);
   };
 
@@ -930,6 +975,7 @@ export default function BrainMap() {
       setCurrentDomain(nextGraph.domain || match.domain || "");
       setCurrentTopic(nextGraph.topic || match.name);
       setSelectedNodeId(null);
+      setUserSelectedNode(false);
       setSearch(match.name);
       lastSearchFocusRef.current = `${query.toLowerCase()}:${match.id}`;
       pendingCenterLabelRef.current = nextGraph.topic || match.name;
@@ -953,6 +999,7 @@ export default function BrainMap() {
     }
 
     pendingCenterLabelRef.current = "";
+    setUserSelectedNode(true);
     setSelectedNodeId(match.id);
     requestAnimationFrame(() => {
       if (!fgRef.current) {
@@ -1005,6 +1052,7 @@ export default function BrainMap() {
     setCurrentDomain(previous.domain);
     setCurrentTopic(previous.topic);
     setSelectedNodeId(null);
+    setUserSelectedNode(false);
     lastSearchFocusRef.current = "";
   };
 
@@ -1014,6 +1062,7 @@ export default function BrainMap() {
     setCurrentDomain("");
     setCurrentTopic("");
     setSelectedNodeId(null);
+    setUserSelectedNode(false);
     setSearch("");
     lastSearchFocusRef.current = "";
     if (fgRef.current && filteredData.nodes.length) {
@@ -1041,7 +1090,7 @@ export default function BrainMap() {
       });
       setExpansionSuggestions(response.data?.suggestions || []);
       setExpansionTopic(response.data?.topic || focusedTopicLabel);
-      setExpansionSource(response.data?.source || "fallback");
+      setExpansionSource(response.data?.source || (response.data?.cached ? "cache" : "rules"));
       setExpansionContextTopics(response.data?.context_topics || []);
     } catch (err) {
       setExpansionError(err.response?.data?.detail || "Unable to refresh AI suggestions.");
@@ -1061,7 +1110,7 @@ export default function BrainMap() {
       const refreshed = await api.get(`/api/topics/${encodeURIComponent(focusedTopicLabel || topicName)}/suggestions`);
       setExpansionSuggestions(refreshed.data?.suggestions || []);
       setExpansionTopic(refreshed.data?.topic || focusedTopicLabel || topicName);
-      setExpansionSource(refreshed.data?.source || "fallback");
+      setExpansionSource(refreshed.data?.source || (refreshed.data?.cached ? "cache" : "rules"));
       setExpansionContextTopics(refreshed.data?.context_topics || []);
       await loadGraphView({ level: currentLevel, domain: currentDomain, topic: currentTopic });
       pendingCenterLabelRef.current = focusedTopicLabel || topicName;
@@ -1337,160 +1386,208 @@ export default function BrainMap() {
             error={learningPathsError}
             onTopicClick={handleSuggestedTopicClick}
             onTopicAction={handleSuggestionAction}
+            collapsed={!panelState.learningPaths}
+            onToggle={() => togglePanel("learningPaths")}
           />
 
           <section className="card brain-side-card suggestion-card">
-            <div className="knowledge-expansion-header">
-              <h3>Suggested Knowledge Expansion</h3>
-              <div className="knowledge-expansion-header-actions">
-                {!!focusedTopicLabel && (
-                  <button
-                    type="button"
-                    className="knowledge-expansion-refresh"
-                    onClick={handleRefreshExpansion}
-                    disabled={expansionLoading || refreshingExpansion}
-                  >
-                    {refreshingExpansion ? "Refreshing..." : "Refresh AI"}
-                  </button>
-                )}
-                {!!focusedTopicLabel && (
-                  <span className={`knowledge-expansion-source ${expansionSource === "ai" ? "ai" : expansionSource === "cache" ? "cache" : "fallback"}`}>
-                    {expansionSource === "ai" ? "AI Suggested" : expansionSource === "cache" ? "Cached AI" : "Fallback Suggested"}
-                  </span>
-                )}
-              </div>
-            </div>
-            {!focusedTopicLabel ? (
-              <p className="muted">Focus a topic in the Brain Map to see missing related concepts you can add next.</p>
-            ) : (
-              <div className="stack compact">
-                <p className="muted">Based on <strong>{expansionTopic || focusedTopicLabel}</strong>, here are related topics not yet in your graph.</p>
-                {!!expansionContextTopics.length && (
-                  <div>
-                    <p className="source-meta">Context used</p>
-                    <div className="tag-list knowledge-expansion-context-list">
-                      {expansionContextTopics.map((topic) => (
-                        <span key={`${expansionTopic || focusedTopicLabel}-${topic}`} className="tag">{topic}</span>
-                      ))}
-                    </div>
+            <button
+              type="button"
+              className="panel-toggle"
+              onClick={() => togglePanel("expansion")}
+              aria-expanded={panelState.expansion}
+            >
+              <span>
+                <h3>Suggested Knowledge Expansion</h3>
+                <p className="muted panel-toggle-subtitle">
+                  {panelState.expansion
+                    ? "Add missing related concepts around the focused topic."
+                    : focusedTopicLabel
+                      ? `${expansionSuggestions.length} suggestion${expansionSuggestions.length === 1 ? "" : "s"} for ${expansionTopic || focusedTopicLabel}`
+                      : "Focus a topic to reveal related concepts you may want to add."}
+                </p>
+              </span>
+              <span className={`panel-toggle-chevron ${panelState.expansion ? "" : "collapsed"}`} aria-hidden="true" />
+            </button>
+            {panelState.expansion && (
+              <>
+                <div className="knowledge-expansion-header">
+                  <div className="knowledge-expansion-header-actions">
+                    {!!focusedTopicLabel && (
+                      <button
+                        type="button"
+                        className="knowledge-expansion-refresh"
+                        onClick={handleRefreshExpansion}
+                        disabled={expansionLoading || refreshingExpansion}
+                      >
+                        {refreshingExpansion ? "Refreshing..." : "Refresh AI"}
+                      </button>
+                    )}
+                    {!!focusedTopicLabel && (
+                      <span className={`knowledge-expansion-source ${expansionSource === "hybrid" ? "hybrid" : expansionSource === "ai" ? "ai" : expansionSource === "cache" ? "cache" : expansionSource === "fallback" ? "fallback" : "rules"}`}>
+                        {expansionSource === "hybrid" ? "Hybrid Suggested" : expansionSource === "ai" ? "AI Suggested" : expansionSource === "cache" ? "Cached" : expansionSource === "fallback" ? "Fallback Suggested" : "Rule Suggested"}
+                      </span>
+                    )}
                   </div>
-                )}
-                {expansionLoading || refreshingExpansion ? <p className="muted">Generating missing concepts from your current graph context...</p> : null}
-                {expansionError ? <p className="error-text">{expansionError}</p> : null}
-                {!expansionLoading && !expansionSuggestions.length && !expansionError ? (
-                  <p className="muted">No missing related topics right now.</p>
-                ) : null}
-                {!!expansionSuggestions.length && (
-                  <div className="knowledge-expansion-list">
-                    {expansionSuggestions.map((suggestion) => (
-                      <div key={suggestion} className="knowledge-expansion-chip-row">
-                        <span className="tag">{suggestion}</span>
-                        <button
-                          type="button"
-                          className="knowledge-expansion-add"
-                          disabled={addingSuggestion === suggestion}
-                          onClick={() => handleAddExpansionSuggestion(suggestion)}
-                        >
-                          {addingSuggestion === suggestion ? "Adding..." : "+ Add"}
-                        </button>
+                </div>
+                {!focusedTopicLabel ? (
+                  <p className="muted">Focus a topic in the Brain Map to see missing related concepts you can add next.</p>
+                ) : (
+                  <div className="stack compact">
+                    <p className="muted">Based on <strong>{expansionTopic || focusedTopicLabel}</strong>, here are related topics not yet in your graph.</p>
+                    {!!expansionContextTopics.length && (
+                      <div>
+                        <p className="source-meta">Context used</p>
+                        <div className="tag-list knowledge-expansion-context-list">
+                          {expansionContextTopics.map((topic) => (
+                            <span key={`${expansionTopic || focusedTopicLabel}-${topic}`} className="tag">{topic}</span>
+                          ))}
+                        </div>
                       </div>
-                    ))}
+                    )}
+                    {expansionLoading || refreshingExpansion ? <p className="muted">Generating missing concepts from your current graph context...</p> : null}
+                    {expansionError ? <p className="error-text">{expansionError}</p> : null}
+                    {!expansionLoading && !expansionSuggestions.length && !expansionError ? (
+                      <p className="muted">No missing related topics right now.</p>
+                    ) : null}
+                    {!!expansionSuggestions.length && (
+                      <div className="knowledge-expansion-list">
+                        {expansionSuggestions.map((suggestion) => (
+                          <div key={suggestion} className="knowledge-expansion-chip-row">
+                            <span className="tag">{suggestion}</span>
+                            <button
+                              type="button"
+                              className="knowledge-expansion-add"
+                              disabled={addingSuggestion === suggestion}
+                              onClick={() => handleAddExpansionSuggestion(suggestion)}
+                            >
+                              {addingSuggestion === suggestion ? "Adding..." : "+ Add"}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </>
             )}
           </section>
           <AIMentorPanel
             onTopicClick={handleSuggestedTopicClick}
             onTopicAction={handleSuggestionAction}
+            collapsed={!panelState.mentor}
+            onToggle={() => togglePanel("mentor")}
           />
 
           <section className="card brain-side-card">
-            <h3>Details</h3>
-        {!selectedNode ? (
-          <p className="muted">Click a node to inspect its related knowledge or zoom deeper into the map.</p>
-        ) : (
-          <div className="stack compact">
-            <div className="brain-detail-header">
-              <strong>{selectedNode.label}</strong>
-              <span className="tag">{selectedNode.group}</span>
-              <span className="tag">{selectedNode.type}</span>
-            </div>
-            <p className="muted">{selectedNode.linked_count} linked item(s)</p>
-            {!!focusContext.connectedLabels.length && (
-              <div>
-                <p className="source-meta">Directly connected nodes</p>
-                <div className="tag-list">
-                  {focusContext.connectedLabels.map((label) => (
+            <button
+              type="button"
+              className="panel-toggle"
+              onClick={() => togglePanel("details")}
+              aria-expanded={panelState.details}
+            >
+              <span>
+                <h3>Details</h3>
+                <p className="muted panel-toggle-subtitle">
+                  {panelState.details
+                    ? "Inspect the focused node and jump to related knowledge."
+                    : selectedNode
+                      ? `${selectedNode.label} · ${selectedNode.linked_count} linked item(s)`
+                      : "Click a node to inspect its related knowledge."}
+                </p>
+              </span>
+              <span className={`panel-toggle-chevron ${panelState.details ? "" : "collapsed"}`} aria-hidden="true" />
+            </button>
+            {panelState.details && (!selectedNode ? (
+              <p className="muted">Click a node to inspect its related knowledge or zoom deeper into the map.</p>
+            ) : (
+              <div className="stack compact">
+                <div className="brain-detail-header">
+                  <strong>{selectedNode.label}</strong>
+                  <span className="tag">{selectedNode.group}</span>
+                  <span className="tag">{selectedNode.type}</span>
+                </div>
+                <p className="muted">{selectedNode.linked_count} linked item(s)</p>
+                {!!focusContext.connectedLabels.length && (
+                  <div>
+                    <p className="source-meta">Directly connected nodes</p>
+                    <div className="tag-list">
+                      {focusContext.connectedLabels.map((label) => (
+                        <button
+                          key={`${selectedNode.id}-${label}`}
+                          type="button"
+                          className="tag tag-button"
+                          onClick={() => currentLevel >= 3 ? openRelatedTopic(label) : focusNode(label)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selectedNode.summary && <p className="muted">{selectedNode.summary}</p>}
+                {selectedNode.linked_titles?.length > 0 ? (
+                  <div>
+                    <p className="source-meta">Linked notes</p>
+                    <ul className="simple-list">
+                      {selectedNode.linked_titles.map((title, index) => (
+                        <li key={`${selectedNode.id}-${index}-${title}`}>{title}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="muted">No linked knowledge items.</p>
+                )}
+                <p className="source-meta">
+                  Suggested next step: {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge")
+                    ? "Click the selected node again or use Zoom Deeper."
+                    : focusContext.connectedLabels[0]
+                      ? `Explore ${focusContext.connectedLabels[0]}`
+                      : "Open this item to review it in full."}
+                </p>
+                <div className="brain-detail-actions">
+                  {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge") && (
                     <button
-                      key={`${selectedNode.id}-${label}`}
                       type="button"
-                      className="tag tag-button"
-                      onClick={() => currentLevel >= 3 ? openRelatedTopic(label) : focusNode(label)}
+                      className="secondary-button"
+                      onClick={() => drillIntoNode(selectedNode)}
                     >
-                      {label}
+                      Zoom Deeper
                     </button>
-                  ))}
+                  )}
+                  {(selectedNode.type === "topic" || selectedNode.type === "bridge") && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => navigate(`/topics/${encodeURIComponent(selectedNode.label)}`)}
+                    >
+                      Open Topic Page
+                    </button>
+                  )}
+                  {selectedNode.type === "knowledge" && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => navigate(`/knowledge?focus=${encodeURIComponent(selectedNode.id.replace("knowledge-", ""))}`)}
+                    >
+                      Open Note
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
-            {selectedNode.summary && <p className="muted">{selectedNode.summary}</p>}
-            {selectedNode.linked_titles?.length > 0 ? (
-              <div>
-                <p className="source-meta">Linked notes</p>
-                <ul className="simple-list">
-                  {selectedNode.linked_titles.map((title, index) => (
-                    <li key={`${selectedNode.id}-${index}-${title}`}>{title}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : (
-              <p className="muted">No linked knowledge items.</p>
-            )}
-            <p className="source-meta">
-              Suggested next step: {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge")
-                ? "Click the selected node again or use Zoom Deeper."
-                : focusContext.connectedLabels[0]
-                  ? `Explore ${focusContext.connectedLabels[0]}`
-                  : "Open this item to review it in full."}
-            </p>
-            <div className="brain-detail-actions">
-              {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge") && (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => drillIntoNode(selectedNode)}
-                >
-                  Zoom Deeper
-                </button>
-              )}
-              {(selectedNode.type === "topic" || selectedNode.type === "bridge") && (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => navigate(`/topics/${encodeURIComponent(selectedNode.label)}`)}
-                >
-                  Open Topic Page
-                </button>
-              )}
-              {selectedNode.type === "knowledge" && (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => navigate(`/knowledge?focus=${encodeURIComponent(selectedNode.id.replace("knowledge-", ""))}`)}
-                >
-                  Open Note
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+            ))}
           </section>
         </aside>
       </section>
     </div>
   );
 }
+
+
+
+
+
+
 
 
 

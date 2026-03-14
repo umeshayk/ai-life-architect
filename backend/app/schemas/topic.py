@@ -62,7 +62,10 @@ class TopicCreateResponse(BaseModel):
 
 class TopicExpansionResponse(BaseModel):
     topic: str
-    source: str = "fallback"
+    source: str = "rules"
+    cached: bool = False
+    rule_confidence: float = 0.0
+    ai_confidence: float = 0.0
     context_topics: list[str] = []
     suggestions: list[str]
 
@@ -111,6 +114,7 @@ class LearningPathResponse(BaseModel):
     topics: list[LearningPathTopic]
     completed_topics: list[str] = []
     upcoming_topics: list[str] = []
+
 
 
 

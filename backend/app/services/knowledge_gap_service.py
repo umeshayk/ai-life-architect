@@ -371,3 +371,23 @@ def build_knowledge_gap_suggestions(db: Session, user_id: int) -> list[dict]:
         }
         for item in ranked[:MAX_SUGGESTIONS]
     ]
+
+
+def get_rule_based_gap_suggestions(db: Session, user_id: int, limit: int = MAX_SUGGESTIONS) -> dict:
+    suggestions = build_knowledge_gap_suggestions(db, user_id)[:limit]
+    confidence = round(max([item.get("confidence", 0.0) for item in suggestions], default=0.0), 2)
+    return {
+        "source": "rules",
+        "confidence": confidence,
+        "suggestions": suggestions,
+    }
+
+
+def get_rule_based_next_topics(db: Session, user_id: int, limit: int = DEFAULT_NEXT_LIMIT) -> dict:
+    suggestions = get_next_learning_topics(db, user_id, limit=limit)
+    confidence = round(max([item.get("confidence", 0.0) for item in suggestions], default=0.0), 2)
+    return {
+        "source": "rules",
+        "confidence": confidence,
+        "suggestions": suggestions,
+    }

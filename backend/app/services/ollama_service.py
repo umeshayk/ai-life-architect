@@ -24,7 +24,7 @@ def _clean_lines(response_text: str) -> list[str]:
     return suggestions
 
 
-def generate_topic_expansion(prompt: str, timeout: int = 25) -> list[str]:
+def generate_list(prompt: str, timeout: int = 25) -> list[str]:
     response = requests.post(
         settings.ollama_url,
         json={"model": settings.ollama_model, "prompt": prompt, "stream": False},
@@ -32,3 +32,7 @@ def generate_topic_expansion(prompt: str, timeout: int = 25) -> list[str]:
     )
     response.raise_for_status()
     return _clean_lines((response.json() or {}).get('response', ''))
+
+
+def generate_topic_expansion(prompt: str, timeout: int = 25) -> list[str]:
+    return generate_list(prompt, timeout=timeout)

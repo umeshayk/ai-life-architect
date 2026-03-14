@@ -123,87 +123,112 @@ function TopicStateIcon({ state }) {
   );
 }
 
-export default function LearningPathsPanel({ learningPaths, error, onTopicClick, onTopicAction }) {
+export default function LearningPathsPanel({
+  learningPaths,
+  error,
+  onTopicClick,
+  onTopicAction,
+  collapsed = false,
+  onToggle = null
+}) {
   return (
     <section className="card brain-side-card">
-      <h3>Learning Paths</h3>
-      <p className="muted">Track your progress through recommended learning paths.</p>
-      {error && <p className="error-text">{error}</p>}
-      {!error && learningPaths.length === 0 ? (
-        <p className="muted">No learning paths are ready yet. Keep adding knowledge to build your roadmap.</p>
-      ) : (
-        <div className="stack compact">
-          {learningPaths.map((path) => (
-            <article key={path.path_name} className="result-item learning-path-card">
-              <div className="row-between learning-path-header">
-                <div>
-                  <h4 className="learning-path-title">{path.path_name}</h4>
-                  <p className="source-meta">Progress: {path.covered_count} / {path.total_count} completed</p>
-                </div>
-                <span className="tag">{path.domain}</span>
-              </div>
+      <button
+        type="button"
+        className="panel-toggle"
+        onClick={onToggle || undefined}
+        aria-expanded={!collapsed}
+      >
+        <span>
+          <h3>Learning Paths</h3>
+          <p className="muted panel-toggle-subtitle">
+            {collapsed
+              ? `${learningPaths.length} path${learningPaths.length === 1 ? "" : "s"} available`
+              : "Track your progress through recommended learning paths."}
+          </p>
+        </span>
+        <span className={`panel-toggle-chevron ${collapsed ? "collapsed" : ""}`} aria-hidden="true" />
+      </button>
+      {!collapsed && (
+        <>
+          {error && <p className="error-text">{error}</p>}
+          {!error && learningPaths.length === 0 ? (
+            <p className="muted">No learning paths are ready yet. Keep adding knowledge to build your roadmap.</p>
+          ) : (
+            <div className="stack compact">
+              {learningPaths.map((path) => (
+                <article key={path.path_name} className="result-item learning-path-card">
+                  <div className="row-between learning-path-header">
+                    <div>
+                      <h4 className="learning-path-title">{path.path_name}</h4>
+                      <p className="source-meta">Progress: {path.covered_count} / {path.total_count} completed</p>
+                    </div>
+                    <span className="tag">{path.domain}</span>
+                  </div>
 
-              <div className="learning-path-progress">
-                <div className="learning-path-progress-fill" style={{ width: `${path.progress_percent}%` }} />
-              </div>
-              <p className="source-meta learning-path-percent">{path.progress_percent}% complete</p>
+                  <div className="learning-path-progress">
+                    <div className="learning-path-progress-fill" style={{ width: `${path.progress_percent}%` }} />
+                  </div>
+                  <p className="source-meta learning-path-percent">{path.progress_percent}% complete</p>
 
-              <div className="learning-path-topic-list">
-                {path.topics.map((topic) => {
-                  const isNext = path.next_topic?.topic === topic.topic;
-                  const topicTarget = { ...topic, domain: path.domain };
-                  return (
-                    <div key={`${path.path_name}-${topic.topic}`} className={`learning-path-topic-row ${topic.state} ${isNext ? "next" : ""}`}>
-                      <TopicStateIcon state={topic.state} />
-                      <button
-                        type="button"
-                        className="link-button learning-path-topic-button"
-                        onClick={() => onTopicClick(topicTarget)}
-                      >
-                        {topic.topic}
-                      </button>
-                      {isNext && (
+                  <div className="learning-path-topic-list">
+                    {path.topics.map((topic) => {
+                      const isNext = path.next_topic?.topic === topic.topic;
+                      const topicTarget = { ...topic, domain: path.domain };
+                      return (
+                        <div key={`${path.path_name}-${topic.topic}`} className={`learning-path-topic-row ${topic.state} ${isNext ? "next" : ""}`}>
+                          <TopicStateIcon state={topic.state} />
+                          <button
+                            type="button"
+                            className="link-button learning-path-topic-button"
+                            onClick={() => onTopicClick(topicTarget)}
+                          >
+                            {topic.topic}
+                          </button>
+                          {isNext && (
+                            <button
+                              type="button"
+                              className="learning-path-next-chip"
+                              onClick={() => onTopicClick(topicTarget)}
+                            >
+                              Next
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {path.next_topic ? (
+                    <div className="learning-path-next-block">
+                      <p className="source-meta">Next topic</p>
+                      <div className="row-between learning-path-next-row">
                         <button
                           type="button"
-                          className="learning-path-next-chip"
-                          onClick={() => onTopicClick(topicTarget)}
+                          className="link-button related-note-button suggestion-topic-link"
+                          onClick={() => onTopicClick(path.next_topic)}
                         >
-                          Next
+                          <DomainTopicIcon domain={path.domain} />
+                          <span>{path.next_topic.topic}</span>
                         </button>
-                      )}
+                        <button
+                          type="button"
+                          className={`suggestion-action-button ${path.next_topic.action === "focus" ? "focus" : "add"}`}
+                          onClick={() => onTopicAction(path.next_topic)}
+                        >
+                          <span className={`suggestion-action-icon ${path.next_topic.action === "focus" ? "focus" : "add"}`} aria-hidden="true" />
+                          <span>{path.next_topic.action === "focus" ? "Focus Topic" : "Add Topic"}</span>
+                        </button>
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-
-              {path.next_topic ? (
-                <div className="learning-path-next-block">
-                  <p className="source-meta">Next topic</p>
-                  <div className="row-between learning-path-next-row">
-                    <button
-                      type="button"
-                      className="link-button related-note-button suggestion-topic-link"
-                      onClick={() => onTopicClick(path.next_topic)}
-                    >
-                      <DomainTopicIcon domain={path.domain} />
-                      <span>{path.next_topic.topic}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`suggestion-action-button ${path.next_topic.action === "focus" ? "focus" : "add"}`}
-                      onClick={() => onTopicAction(path.next_topic)}
-                    >
-                      <span className={`suggestion-action-icon ${path.next_topic.action === "focus" ? "focus" : "add"}`} aria-hidden="true" />
-                      <span>{path.next_topic.action === "focus" ? "Focus Topic" : "Add Topic"}</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p className="success-text">Path completed.</p>
-              )}
-            </article>
-          ))}
-        </div>
+                  ) : (
+                    <p className="success-text">Path completed.</p>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </section>
   );
