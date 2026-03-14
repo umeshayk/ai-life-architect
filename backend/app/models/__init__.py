@@ -4,6 +4,7 @@ from app.models.knowledge import KnowledgeItem
 from app.models.knowledge_connection import KnowledgeConnection
 from app.models.profile import UserProfile
 from app.models.topic import Topic
+from app.models.topic_expansion_cache import TopicExpansionCache
 from app.models.user import User
 
 __all__ = [
@@ -12,6 +13,7 @@ __all__ = [
     "KnowledgeEmbedding",
     "KnowledgeItem",
     "Topic",
+    "TopicExpansionCache",
     "UserProfile",
     "User",
 ]

@@ -492,7 +492,29 @@ export default function BrainMap() {
   const [error, setError] = useState("");
   const [learningPaths, setLearningPaths] = useState([]);
   const [learningPathsError, setLearningPathsError] = useState("");
+  const [expansionSuggestions, setExpansionSuggestions] = useState([]);
+  const [expansionTopic, setExpansionTopic] = useState("");
+  const [expansionSource, setExpansionSource] = useState("fallback");
+  const [expansionContextTopics, setExpansionContextTopics] = useState([]);
+  const [expansionLoading, setExpansionLoading] = useState(false);
+  const [expansionError, setExpansionError] = useState("");
+  const [addingSuggestion, setAddingSuggestion] = useState("");
+  const [refreshingExpansion, setRefreshingExpansion] = useState(false);
   const [graphSize, setGraphSize] = useState({ width: 1200, height: 920 });
+
+  const loadGraphView = async ({ level, domain = "", topic = "" }) => {
+    const params = { level };
+    if (domain) {
+      params.domain = domain;
+    }
+    if (topic) {
+      params.topic = topic;
+    }
+    const response = await api.get("/api/brain-map", { params });
+    setGraph(normalizeGraphResponse(response.data));
+    didAutoFitRef.current = false;
+    return response.data;
+  };
 
   useEffect(() => {
     api
@@ -505,22 +527,9 @@ export default function BrainMap() {
   }, []);
 
   useEffect(() => {
-    const params = { level: currentLevel };
-    if (currentDomain) {
-      params.domain = currentDomain;
-    }
-    if (currentTopic) {
-      params.topic = currentTopic;
-    }
-
     setError("");
     setSelectedNodeId(null);
-    api
-      .get("/api/brain-map", { params })
-      .then((response) => {
-        setGraph(normalizeGraphResponse(response.data));
-        didAutoFitRef.current = false;
-      })
+    loadGraphView({ level: currentLevel, domain: currentDomain, topic: currentTopic })
       .catch((err) => setError(err.response?.data?.detail || "Unable to load the brain map."));
   }, [currentLevel, currentDomain, currentTopic]);
 
@@ -612,6 +621,7 @@ export default function BrainMap() {
   }, [graphWithDegree.nodes, search]);
 
   const selectedNode = graphWithDegree.nodes.find((node) => node.id === selectedNodeId) || null;
+  const focusedTopicLabel = selectedNode?.type === "topic" ? selectedNode.label : currentTopic || graph.topic || "";
   const hoveredNode = graphWithDegree.nodes.find((node) => node.id === hoveredNodeId) || null;
   const shouldShowSearchMatches = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -649,6 +659,34 @@ export default function BrainMap() {
     return leaders;
   }, [filteredData.nodes]);
 
+  useEffect(() => {
+    if (!focusedTopicLabel) {
+      setExpansionSuggestions([]);
+      setExpansionTopic("");
+      setExpansionSource("fallback");
+      setExpansionContextTopics([]);
+      setExpansionError("");
+      return;
+    }
+
+    setExpansionLoading(true);
+    setExpansionError("");
+    api.get(`/api/topics/${encodeURIComponent(focusedTopicLabel)}/suggestions`)
+      .then((response) => {
+        setExpansionSuggestions(response.data?.suggestions || []);
+        setExpansionTopic(response.data?.topic || focusedTopicLabel);
+        setExpansionSource(response.data?.source || "fallback");
+        setExpansionContextTopics(response.data?.context_topics || []);
+      })
+      .catch((err) => {
+        setExpansionSuggestions([]);
+        setExpansionTopic(focusedTopicLabel);
+        setExpansionSource("fallback");
+        setExpansionContextTopics([]);
+        setExpansionError(err.response?.data?.detail || "Unable to load knowledge expansion suggestions.");
+      })
+      .finally(() => setExpansionLoading(false));
+  }, [focusedTopicLabel]);
   const focusContext = useMemo(() => {
     if (!selectedNodeId) {
       return { neighborIds: new Set(), connectedLabels: [] };
@@ -991,6 +1029,48 @@ export default function BrainMap() {
   };
 
   const getSuggestionLabel = (suggestion) => suggestion.topic || suggestion.suggested_topic;
+  const handleRefreshExpansion = async () => {
+    if (!focusedTopicLabel) {
+      return;
+    }
+    setRefreshingExpansion(true);
+    setExpansionError("");
+    try {
+      const response = await api.get(`/api/topics/${encodeURIComponent(focusedTopicLabel)}/suggestions`, {
+        params: { refresh: true }
+      });
+      setExpansionSuggestions(response.data?.suggestions || []);
+      setExpansionTopic(response.data?.topic || focusedTopicLabel);
+      setExpansionSource(response.data?.source || "fallback");
+      setExpansionContextTopics(response.data?.context_topics || []);
+    } catch (err) {
+      setExpansionError(err.response?.data?.detail || "Unable to refresh AI suggestions.");
+    } finally {
+      setRefreshingExpansion(false);
+    }
+  };
+
+  const handleAddExpansionSuggestion = async (topicName) => {
+    if (!topicName) {
+      return;
+    }
+    setAddingSuggestion(topicName);
+    setExpansionError("");
+    try {
+      await api.post("/api/topics/add", { name: topicName });
+      const refreshed = await api.get(`/api/topics/${encodeURIComponent(focusedTopicLabel || topicName)}/suggestions`);
+      setExpansionSuggestions(refreshed.data?.suggestions || []);
+      setExpansionTopic(refreshed.data?.topic || focusedTopicLabel || topicName);
+      setExpansionSource(refreshed.data?.source || "fallback");
+      setExpansionContextTopics(refreshed.data?.context_topics || []);
+      await loadGraphView({ level: currentLevel, domain: currentDomain, topic: currentTopic });
+      pendingCenterLabelRef.current = focusedTopicLabel || topicName;
+    } catch (err) {
+      setExpansionError(err.response?.data?.detail || "Unable to add that topic.");
+    } finally {
+      setAddingSuggestion("");
+    }
+  };
 
   const handleSuggestedTopicClick = (suggestion) => {
     const suggestionLabel = getSuggestionLabel(suggestion);
@@ -1259,6 +1339,67 @@ export default function BrainMap() {
             onTopicAction={handleSuggestionAction}
           />
 
+          <section className="card brain-side-card suggestion-card">
+            <div className="knowledge-expansion-header">
+              <h3>Suggested Knowledge Expansion</h3>
+              <div className="knowledge-expansion-header-actions">
+                {!!focusedTopicLabel && (
+                  <button
+                    type="button"
+                    className="knowledge-expansion-refresh"
+                    onClick={handleRefreshExpansion}
+                    disabled={expansionLoading || refreshingExpansion}
+                  >
+                    {refreshingExpansion ? "Refreshing..." : "Refresh AI"}
+                  </button>
+                )}
+                {!!focusedTopicLabel && (
+                  <span className={`knowledge-expansion-source ${expansionSource === "ai" ? "ai" : expansionSource === "cache" ? "cache" : "fallback"}`}>
+                    {expansionSource === "ai" ? "AI Suggested" : expansionSource === "cache" ? "Cached AI" : "Fallback Suggested"}
+                  </span>
+                )}
+              </div>
+            </div>
+            {!focusedTopicLabel ? (
+              <p className="muted">Focus a topic in the Brain Map to see missing related concepts you can add next.</p>
+            ) : (
+              <div className="stack compact">
+                <p className="muted">Based on <strong>{expansionTopic || focusedTopicLabel}</strong>, here are related topics not yet in your graph.</p>
+                {!!expansionContextTopics.length && (
+                  <div>
+                    <p className="source-meta">Context used</p>
+                    <div className="tag-list knowledge-expansion-context-list">
+                      {expansionContextTopics.map((topic) => (
+                        <span key={`${expansionTopic || focusedTopicLabel}-${topic}`} className="tag">{topic}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {expansionLoading || refreshingExpansion ? <p className="muted">Generating missing concepts from your current graph context...</p> : null}
+                {expansionError ? <p className="error-text">{expansionError}</p> : null}
+                {!expansionLoading && !expansionSuggestions.length && !expansionError ? (
+                  <p className="muted">No missing related topics right now.</p>
+                ) : null}
+                {!!expansionSuggestions.length && (
+                  <div className="knowledge-expansion-list">
+                    {expansionSuggestions.map((suggestion) => (
+                      <div key={suggestion} className="knowledge-expansion-chip-row">
+                        <span className="tag">{suggestion}</span>
+                        <button
+                          type="button"
+                          className="knowledge-expansion-add"
+                          disabled={addingSuggestion === suggestion}
+                          onClick={() => handleAddExpansionSuggestion(suggestion)}
+                        >
+                          {addingSuggestion === suggestion ? "Adding..." : "+ Add"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
           <AIMentorPanel
             onTopicClick={handleSuggestedTopicClick}
             onTopicAction={handleSuggestionAction}
@@ -1350,5 +1491,18 @@ export default function BrainMap() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

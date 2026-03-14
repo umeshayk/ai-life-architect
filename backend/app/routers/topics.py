@@ -16,7 +16,10 @@ from app.schemas.topic import (
     KnowledgeSuggestion,
     NextLearningTopic,
     TopicCleanupResponse,
+    TopicCreateRequest,
+    TopicCreateResponse,
     TopicDetailResponse,
+    TopicExpansionResponse,
     TopicItemsResponse,
     TopicNoteSummary,
     TopicRebuildResponse,
@@ -24,6 +27,7 @@ from app.schemas.topic import (
     TopicSummary,
 )
 from app.services.graph_service import _topic_group, build_topic_graph_for_user
+from app.services.knowledge_expansion_service import suggest_missing_topics
 from app.services.knowledge_gap_service import build_knowledge_gap_suggestions, get_next_learning_topics
 from app.services.retrieval import _extract_item_concepts
 from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
@@ -64,6 +68,46 @@ def list_topics(db: Session = Depends(get_db), current_user: User = Depends(get_
     ]
 
 
+@router.post("/api/topics/add", response_model=TopicCreateResponse)
+def add_topic(payload: TopicCreateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Topic name is required")
+
+    existing = db.scalar(
+        select(Topic).where(
+            Topic.user_id == current_user.id,
+            func.lower(Topic.name) == name.lower(),
+        )
+    )
+    if existing is not None:
+        return TopicCreateResponse(
+            topic=TopicSummary(
+                id=existing.id,
+                name=existing.name,
+                count=0,
+                discovery_method="manual",
+                domain=_topic_group(existing.name),
+            ),
+            created=False,
+        )
+
+    topic = Topic(user_id=current_user.id, name=name, type="standard", level=2)
+    db.add(topic)
+    db.commit()
+    db.refresh(topic)
+    return TopicCreateResponse(
+        topic=TopicSummary(
+            id=topic.id,
+            name=topic.name,
+            count=0,
+            discovery_method="manual",
+            domain=_topic_group(topic.name),
+        ),
+        created=True,
+    )
+
+
 @router.get("/api/topics/search", response_model=list[TopicSearchResult])
 def search_topics(
     q: str = Query(..., min_length=1),
@@ -99,6 +143,12 @@ def search_topics(
         )
     )
     return matches[:8]
+
+
+@router.get("/api/topics/{topic_name}/suggestions", response_model=TopicExpansionResponse)
+def get_topic_suggestions(topic_name: str, refresh: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    payload = suggest_missing_topics(db, current_user.id, topic_name, refresh=refresh)
+    return TopicExpansionResponse(**payload)
 
 
 @router.get("/api/topics/{topic_id}/graph", response_model=GraphResponse)
@@ -232,3 +282,6 @@ def reassign_user_topics(db: Session = Depends(get_db), current_user: User = Dep
 def cleanup_user_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     merged_topics = cleanup_topics(db, current_user.id)
     return TopicCleanupResponse(merged_topics=merged_topics, discovery_method="normalized")
+
+
+

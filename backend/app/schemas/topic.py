@@ -51,6 +51,22 @@ class TopicDetailResponse(BaseModel):
 
 
 
+class TopicCreateRequest(BaseModel):
+    name: str
+
+
+class TopicCreateResponse(BaseModel):
+    topic: TopicSummary
+    created: bool = False
+
+
+class TopicExpansionResponse(BaseModel):
+    topic: str
+    source: str = "fallback"
+    context_topics: list[str] = []
+    suggestions: list[str]
+
+
 class TopicSearchResult(BaseModel):
     id: int
     name: str
@@ -95,4 +111,6 @@ class LearningPathResponse(BaseModel):
     topics: list[LearningPathTopic]
     completed_topics: list[str] = []
     upcoming_topics: list[str] = []
+
+
 
