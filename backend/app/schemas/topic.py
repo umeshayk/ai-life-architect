@@ -118,3 +118,25 @@ class LearningPathResponse(BaseModel):
 
 
 
+
+class KnowledgeGapItem(BaseModel):
+    topic: str
+    state: str = "missing"
+    action: str = "add"
+    reason: str
+    confidence: float
+    source: str = "rules"
+
+
+class KnowledgeGapPathResponse(BaseModel):
+    path_name: str
+    domain: str
+    progress_percent: int
+    covered_count: int
+    total_count: int
+    next_topic: LearningPathTopic | None = None
+    source: str = "rules"
+    cached: bool = False
+    rule_confidence: float = 0.0
+    ai_confidence: float = 0.0
+    missing_topics: list[KnowledgeGapItem] = []

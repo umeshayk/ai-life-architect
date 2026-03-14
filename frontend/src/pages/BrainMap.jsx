@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import LearningPathsPanel from "../components/LearningPathsPanel";
 import AIMentorPanel from "../components/AIMentorPanel";
+import KnowledgeGapPanel from "../components/KnowledgeGapPanel";
 
 const GROUP_COLORS = {
   AI: "#3b82f6",
@@ -494,6 +495,8 @@ export default function BrainMap() {
   const [error, setError] = useState("");
   const [learningPaths, setLearningPaths] = useState([]);
   const [learningPathsError, setLearningPathsError] = useState("");
+  const [knowledgeGaps, setKnowledgeGaps] = useState([]);
+  const [knowledgeGapsError, setKnowledgeGapsError] = useState("");
   const [expansionSuggestions, setExpansionSuggestions] = useState([]);
   const [expansionTopic, setExpansionTopic] = useState("");
   const [expansionSource, setExpansionSource] = useState("fallback");
@@ -501,11 +504,13 @@ export default function BrainMap() {
   const [expansionLoading, setExpansionLoading] = useState(false);
   const [expansionError, setExpansionError] = useState("");
   const [addingSuggestion, setAddingSuggestion] = useState("");
+  const [addingGapTopic, setAddingGapTopic] = useState("");
   const [refreshingExpansion, setRefreshingExpansion] = useState(false);
   const [graphSize, setGraphSize] = useState({ width: 1200, height: 920 });
   const [userSelectedNode, setUserSelectedNode] = useState(false);
   const [panelState, setPanelState] = useState({
     learningPaths: false,
+    gaps: false,
     expansion: false,
     mentor: false,
     details: false
@@ -532,6 +537,20 @@ export default function BrainMap() {
     return response.data;
   };
 
+  const loadKnowledgeGaps = async ({ level = currentLevel, domain = currentDomain, topic = currentTopic, refresh = false } = {}) => {
+    const params = { refresh, level };
+    if (domain) {
+      params.domain = domain;
+    }
+    if (topic) {
+      params.topic = topic;
+    }
+    const response = await api.get("/api/knowledge/gaps", { params });
+    setKnowledgeGaps(response.data || []);
+    setKnowledgeGapsError("");
+    return response.data || [];
+  };
+
   useEffect(() => {
     api
       .get("/api/learning-paths")
@@ -541,6 +560,11 @@ export default function BrainMap() {
       })
       .catch((err) => setLearningPathsError(err.response?.data?.detail || "Unable to load learning paths."));
   }, []);
+
+  useEffect(() => {
+    loadKnowledgeGaps({ level: currentLevel, domain: currentDomain, topic: currentTopic })
+      .catch((err) => setKnowledgeGapsError(err.response?.data?.detail || "Unable to load knowledge gaps."));
+  }, [currentLevel, currentDomain, currentTopic]);
 
   useEffect(() => {
     setError("");
@@ -1121,6 +1145,29 @@ export default function BrainMap() {
     }
   };
 
+  const handleAddGapTopic = async (topicName) => {
+    if (!topicName) {
+      return;
+    }
+    setAddingGapTopic(topicName);
+    setKnowledgeGapsError("");
+    try {
+      await api.post("/api/topics/add", { name: topicName });
+      await Promise.all([
+        loadKnowledgeGaps({ level: currentLevel, domain: currentDomain, topic: currentTopic, refresh: true }),
+        api.get("/api/learning-paths").then((response) => {
+          setLearningPaths(response.data || []);
+          setLearningPathsError("");
+        }),
+        loadGraphView({ level: currentLevel, domain: currentDomain, topic: currentTopic }),
+      ]);
+      pendingCenterLabelRef.current = focusedTopicLabel || topicName;
+    } catch (err) {
+      setKnowledgeGapsError(err.response?.data?.detail || "Unable to add that topic.");
+    } finally {
+      setAddingGapTopic("");
+    }
+  };
   const handleSuggestedTopicClick = (suggestion) => {
     const suggestionLabel = getSuggestionLabel(suggestion);
     const existingNode = graphWithDegree.nodes.find((node) => node.label.toLowerCase() === suggestionLabel.toLowerCase());
@@ -1390,6 +1437,16 @@ export default function BrainMap() {
             onToggle={() => togglePanel("learningPaths")}
           />
 
+          <KnowledgeGapPanel
+            gaps={knowledgeGaps}
+            error={knowledgeGapsError}
+            addingTopic={addingGapTopic}
+            onAddTopic={handleAddGapTopic}
+            onTopicClick={handleSuggestedTopicClick}
+            collapsed={!panelState.gaps}
+            onToggle={() => togglePanel("gaps")}
+          />
+
           <section className="card brain-side-card suggestion-card">
             <button
               type="button"
@@ -1582,6 +1639,9 @@ export default function BrainMap() {
     </div>
   );
 }
+
+
+
 
 
 
