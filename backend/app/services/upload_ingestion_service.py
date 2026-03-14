@@ -9,6 +9,7 @@ from app.services.knowledge_gap_service import get_next_learning_topics
 from app.services.learning_path_service import build_learning_paths
 from app.services.summarizer import build_summary_and_tags
 from app.services.topic_service import assign_topics_to_item, preview_topics_for_item
+from app.services.topic_linker import link_topics_for_item
 
 
 def load_knowledge_item_with_relations(db: Session, item_id: int) -> KnowledgeItem | None:
@@ -122,6 +123,21 @@ def finalize_ingested_item(
     sync_knowledge_embedding(db, item)
     if not skip_topic_generation:
         assign_topics_to_item(db, item)
+        loaded_item = load_knowledge_item_with_relations(db, item.id) or item
+        linked_topic_names = [
+            content_topic.topic.name
+            for content_topic in loaded_item.content_topics
+            if content_topic.topic is not None and content_topic.topic.name
+        ]
+        if len(linked_topic_names) >= 2:
+            link_topics_for_item(
+                db,
+                item.user_id,
+                linked_topic_names,
+                item_id=item.id,
+                item_name=item.file_name or item.title,
+                source_method="upload",
+            )
     rebuild_connections_for_user(db, item.user_id)
 
     loaded_item = load_knowledge_item_with_relations(db, item.id)

@@ -32,6 +32,15 @@ def startup() -> None:
         )
         connection.execute(text("ALTER TABLE IF EXISTS topics ADD COLUMN IF NOT EXISTS parent_topic_id INTEGER"))
         connection.execute(text("ALTER TABLE IF EXISTS topics ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 2"))
+        connection.execute(text("ALTER TABLE IF EXISTS topic_relationships ADD COLUMN IF NOT EXISTS source_topic_id INTEGER"))
+        connection.execute(text("ALTER TABLE IF EXISTS topic_relationships ADD COLUMN IF NOT EXISTS target_topic_id INTEGER"))
+        connection.execute(text("ALTER TABLE IF EXISTS topic_relationships ADD COLUMN IF NOT EXISTS evidence_json TEXT"))
+        connection.execute(text("ALTER TABLE IF EXISTS topic_relationships ADD COLUMN IF NOT EXISTS explanation_text TEXT"))
+        connection.execute(
+            text(
+                "ALTER TABLE IF EXISTS topic_relationships ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+            )
+        )
     Base.metadata.create_all(bind=engine)
 
 
@@ -54,6 +63,7 @@ app.include_router(connections.router)
 app.include_router(insights.router)
 app.include_router(graph.router)
 app.include_router(timeline.router)
+
 
 
 

@@ -28,6 +28,8 @@ class GraphEdge(BaseModel):
     target: str
     type: str
     weight: float = 1.0
+    relationship_id: int | None = None
+    confidence: float | None = None
 
 
 class GraphResponse(BaseModel):

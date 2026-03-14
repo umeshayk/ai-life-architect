@@ -26,12 +26,14 @@ from app.schemas.topic import (
     TopicSearchResult,
     TopicSummary,
     TopicSummaryResponse,
+    RelationshipDetailResponse,
 )
 from app.services.graph_service import _topic_group, build_topic_graph_for_user
 from app.services.knowledge_expansion_service import suggest_missing_topics
 from app.services.knowledge_gap_service import build_knowledge_gap_suggestions, get_next_learning_topics
 from app.services.retrieval import _extract_item_concepts
 from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
+from app.services.relationship_service import get_relationship_detail
 from app.services.topic_summary_service import get_topic_summary
 
 
@@ -167,6 +169,14 @@ def get_topic_summary_endpoint(topic_id: int, refresh: bool = Query(False), db: 
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/api/relationships/{relationship_id}", response_model=RelationshipDetailResponse)
+def get_relationship_details(relationship_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        return RelationshipDetailResponse(**get_relationship_detail(db, current_user.id, relationship_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/api/topics/{topic_id}/items", response_model=TopicItemsResponse)
 def get_topic_items(topic_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     topic = db.scalar(select(Topic).where(Topic.id == topic_id, Topic.user_id == current_user.id))
@@ -292,3 +302,4 @@ def reassign_user_topics(db: Session = Depends(get_db), current_user: User = Dep
 def cleanup_user_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     merged_topics = cleanup_topics(db, current_user.id)
     return TopicCleanupResponse(merged_topics=merged_topics, discovery_method="normalized")
+

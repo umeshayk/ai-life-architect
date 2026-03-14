@@ -15,6 +15,7 @@ from app.schemas.graph import GraphEdge, GraphNode, GraphResponse
 from app.services.topic_bridge_service import build_topic_bridges
 from app.services.topic_cluster_service import annotate_graph_clusters
 from app.services.topic_hierarchy_service import infer_topic_hierarchy, sync_topic_hierarchy_metadata
+from app.services.topic_linker import sync_relationships_for_user
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -47,6 +48,17 @@ MAX_ITEM_COUNT = 24
 BRIDGE_CACHE_TTL_SECONDS = 45
 _BRIDGE_CACHE: dict[tuple[int, tuple[str, ...], tuple[tuple[str, int], ...]], tuple[float, dict]] = {}
 _BRIDGE_CACHE_LOCK = Lock()
+
+FOCUSED_NEIGHBOR_NOISE_TOKENS = {
+    "should",
+    "key",
+    "matter",
+    "matters",
+    "overview",
+    "intro",
+    "introduction",
+    "basics",
+}
 
 
 def _topic_group(topic_name: str) -> str:
@@ -103,6 +115,30 @@ def _stored_relationships(db: Session, user_id: int) -> list[TopicRelationship]:
     ).all()
 
 
+def _relationship_lookup(relationships: list[TopicRelationship]) -> dict[tuple[str, str], TopicRelationship]:
+    lookup: dict[tuple[str, str], TopicRelationship] = {}
+    for relationship in relationships:
+        key = tuple(sorted((relationship.source_topic, relationship.target_topic)))
+        current = lookup.get(key)
+        if current is None or relationship.confidence > current.confidence:
+            lookup[key] = relationship
+    return lookup
+
+
+def _cooccurrence_edge(source: str, target: str, weight: float, relationship_lookup: dict[tuple[str, str], TopicRelationship]) -> GraphEdge:
+    relationship = relationship_lookup.get(tuple(sorted((source, target))))
+    if relationship is not None:
+        return GraphEdge(
+            source=source,
+            target=target,
+            type=relationship.relationship_type,
+            weight=relationship.confidence,
+            relationship_id=relationship.id,
+            confidence=relationship.confidence,
+        )
+    return GraphEdge(source=source, target=target, type="topic_link", weight=float(weight))
+
+
 def _build_graph_context(db: Session, user_id: int) -> dict:
     items = db.scalars(
         select(KnowledgeItem)
@@ -124,6 +160,7 @@ def _build_graph_context(db: Session, user_id: int) -> dict:
             "available_domains": [],
             "topic_to_groups": {},
             "stored_relationships": relationships,
+        "relationship_lookup": _relationship_lookup(relationships),
         }
 
     topic_counts: Counter[str] = Counter()
@@ -185,6 +222,7 @@ def _build_graph_context(db: Session, user_id: int) -> dict:
         "available_domains": available_domains,
         "topic_to_groups": topic_to_groups,
         "stored_relationships": relationships,
+        "relationship_lookup": _relationship_lookup(relationships),
     }
 
 
@@ -238,9 +276,80 @@ def _relationship_edges(context: dict, selected_topics: set[str]) -> list[GraphE
                 target=relationship.target_topic,
                 type=relationship.relationship_type,
                 weight=relationship.confidence,
+                relationship_id=relationship.id,
+                confidence=relationship.confidence,
             )
         )
     return edges
+
+
+def _is_noisy_focused_neighbor(topic_name: str, center_topic: str) -> bool:
+    words = {word.lower() for word in topic_name.split() if word}
+    center_words = {word.lower() for word in center_topic.split() if word}
+    if not words:
+        return True
+    if len(words) <= 2 and words & FOCUSED_NEIGHBOR_NOISE_TOKENS:
+        return True
+    if words & FOCUSED_NEIGHBOR_NOISE_TOKENS and words & center_words:
+        return True
+    return False
+
+
+def _focused_neighbor_score(topic_name: str, center_topic: str, context: dict) -> float:
+    if topic_name == center_topic:
+        return 10_000.0
+
+    topic_counts: Counter[str] = context["topic_counts"]
+    relationship_lookup: dict[tuple[str, str], TopicRelationship] = context["relationship_lookup"]
+    pair_counts: Counter[tuple[str, str]] = context["pair_counts"]
+
+    relationship = relationship_lookup.get(tuple(sorted((topic_name, center_topic))))
+    pair_weight = pair_counts.get((topic_name, center_topic), 0) + pair_counts.get((center_topic, topic_name), 0)
+    topic_count = topic_counts.get(topic_name, 0)
+    group = _topic_group(topic_name)
+
+    score = topic_count * 2.0 + pair_weight * 1.6
+    if relationship is not None:
+        score += relationship.confidence * 12
+    if group != "General":
+        score += 1.5
+    if topic_count <= 1 and group == "General":
+        score -= 4.5
+    if len(topic_name.split()) > 3:
+        score -= 3
+    return score
+
+
+def _should_include_focused_neighbor(topic_name: str, center_topic: str, context: dict) -> bool:
+    if topic_name == center_topic:
+        return True
+
+    topic_counts: Counter[str] = context["topic_counts"]
+    relationship_lookup: dict[tuple[str, str], TopicRelationship] = context["relationship_lookup"]
+    pair_counts: Counter[tuple[str, str]] = context["pair_counts"]
+
+    relationship = relationship_lookup.get(tuple(sorted((topic_name, center_topic))))
+    pair_weight = pair_counts.get((topic_name, center_topic), 0) + pair_counts.get((center_topic, topic_name), 0)
+    topic_count = topic_counts.get(topic_name, 0)
+    group = _topic_group(topic_name)
+    words = topic_name.split()
+
+    if _is_noisy_focused_neighbor(topic_name, center_topic):
+        return False
+    if relationship is not None and relationship.confidence >= 0.7:
+        return True
+    if topic_count >= 2 and pair_weight >= 1 and group != "General":
+        return True
+    if pair_weight >= 2 and group != "General":
+        return True
+    if group != "General" and topic_count >= 2:
+        return True
+
+    if group == "General":
+        return False
+    if len(words) > 3:
+        return False
+    return topic_count >= 2 or pair_weight >= 2
 
 
 def _domain_edges(pair_counts: Counter[tuple[str, str]], topic_to_groups: dict[str, str]) -> tuple[list[GraphEdge], Counter[str]]:
@@ -325,7 +434,7 @@ def _build_level_two(context: dict, domain: str | None) -> GraphResponse:
 
     selected_topics = set(domain_topics)
     edges = [
-        GraphEdge(source=source, target=target, type="topic_link", weight=float(weight))
+        _cooccurrence_edge(source, target, float(weight), context["relationship_lookup"])
         for (source, target), weight in context["pair_counts"].most_common(40)
         if source in selected_topics and target in selected_topics
     ]
@@ -394,11 +503,28 @@ def _build_level_three(context: dict, bridge_context: dict, domain: str | None, 
             if target_id != topic and target_id not in bridge_node_ids:
                 neighbor_topics.add(target_id)
 
-    selected_topics = {name for name in neighbor_topics if name in topic_counts}
+    scored_neighbors = sorted(
+        (
+            name for name in neighbor_topics
+            if name in topic_counts and _should_include_focused_neighbor(name, topic, context)
+        ),
+        key=lambda name: _focused_neighbor_score(name, topic, context),
+        reverse=True,
+    )
+    prioritized_topics: list[str] = []
+    for name in scored_neighbors:
+        if name == topic:
+            prioritized_topics.append(name)
+            continue
+        if len(prioritized_topics) >= 8:
+            continue
+        prioritized_topics.append(name)
+
+    selected_topics = set(prioritized_topics)
     edges = []
     for (source, target), weight in context["pair_counts"].most_common(80):
         if source in selected_topics and target in selected_topics:
-            edges.append(GraphEdge(source=source, target=target, type="topic_link", weight=float(weight)))
+            edges.append(_cooccurrence_edge(source, target, float(weight), context["relationship_lookup"]))
 
     edges.extend(_relationship_edges(context, selected_topics))
     child_counts: Counter[str] = Counter()
@@ -609,6 +735,8 @@ def build_topic_graph_for_user(db: Session, user_id: int, topic_id: int) -> Grap
     if topic is None:
         raise ValueError("Topic not found")
 
+    sync_relationships_for_user(db, user_id)
+
     return build_brain_map_for_user(
         db,
         user_id,
@@ -616,3 +744,4 @@ def build_topic_graph_for_user(db: Session, user_id: int, topic_id: int) -> Grap
         domain=_topic_group(topic.name),
         topic=topic.name,
     )
+

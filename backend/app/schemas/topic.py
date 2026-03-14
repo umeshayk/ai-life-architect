@@ -146,3 +146,13 @@ class KnowledgeGapPathResponse(BaseModel):
     rule_confidence: float = 0.0
     ai_confidence: float = 0.0
     missing_topics: list[KnowledgeGapItem] = []
+
+
+class RelationshipDetailResponse(BaseModel):
+    id: int
+    source_topic: str
+    target_topic: str
+    relationship_type: str
+    confidence: float
+    explanation: str
+    evidence: dict = {}

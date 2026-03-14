@@ -54,6 +54,32 @@ const CLUSTER_LAYOUT_HINTS = {
   General: { x: 0.66, y: 0.3 }
 };
 
+const RELATIONSHIP_TYPE_LABELS = {
+  related_to: "Related To",
+  depends_on: "Depends On",
+  used_in: "Used In",
+  subtopic_of: "Subtopic Of",
+  topic_link: "Related To",
+  topic_parent_relationship: "Subtopic Of",
+  topic_bridge_relationship: "Related To",
+  domain_link: "Related To",
+  knowledge_item_link: "Note Link",
+  note_link: "Note Link"
+};
+
+const RELATIONSHIP_FALLBACK_EXPLANATIONS = {
+  related_to: "These topics frequently appear together in your knowledge graph.",
+  depends_on: "The source topic depends on the target topic as a prerequisite.",
+  used_in: "The target topic is used inside the source topic.",
+  subtopic_of: "The source topic is a subtopic of the target topic.",
+  topic_link: "These topics are connected in your knowledge graph.",
+  topic_parent_relationship: "One topic is a more specific concept within the other.",
+  topic_bridge_relationship: "These topics are connected through a bridge concept in your graph.",
+  domain_link: "These domains are connected through related topics in your graph.",
+  knowledge_item_link: "This note is directly linked to the selected topic.",
+  note_link: "This note is directly linked to the selected topic in your knowledge graph."
+};
+
 function hexToRgb(hex) {
   const normalized = hex.replace("#", "");
   const value = normalized.length === 3
@@ -487,6 +513,10 @@ export default function BrainMap() {
   const [currentTopic, setCurrentTopic] = useState("");
   const [historyStack, setHistoryStack] = useState([]);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [selectedRelationshipId, setSelectedRelationshipId] = useState(null);
+  const [relationshipDetail, setRelationshipDetail] = useState(null);
+  const [relationshipLoading, setRelationshipLoading] = useState(false);
+  const [relationshipError, setRelationshipError] = useState("");
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [search, setSearch] = useState("");
@@ -573,6 +603,9 @@ export default function BrainMap() {
   useEffect(() => {
     setError("");
     setSelectedNodeId(null);
+    setSelectedRelationshipId(null);
+    setRelationshipDetail(null);
+    setRelationshipError("");
     setUserSelectedNode(false);
     loadGraphView({ level: currentLevel, domain: currentDomain, topic: currentTopic })
       .catch((err) => setError(err.response?.data?.detail || "Unable to load the brain map."));
@@ -704,6 +737,70 @@ export default function BrainMap() {
       setRefreshingTopicSummary(false);
     }
   };
+
+  const getLinkEndpointId = (endpoint) => (typeof endpoint === "object" ? endpoint?.id : endpoint);
+  const getLinkEndpointLabel = (endpoint) => (typeof endpoint === "object" ? endpoint?.label || endpoint?.name || endpoint?.id : endpoint);
+  const getLinkEndpointType = (endpoint) => (typeof endpoint === "object" ? endpoint?.type : null);
+
+  const buildLocalRelationshipDetail = (link) => {
+    const sourceLabel = getLinkEndpointLabel(link.source);
+    const targetLabel = getLinkEndpointLabel(link.target);
+    const sourceType = getLinkEndpointType(link.source);
+    const targetType = getLinkEndpointType(link.target);
+    const isKnowledgeLink = sourceType === "knowledge" || targetType === "knowledge";
+    const relationshipType = isKnowledgeLink ? "note_link" : (link.type || "related_to");
+    const relationshipId = link.relationship_id || `local:${sourceLabel}:${targetLabel}:${relationshipType}`;
+    const hasStoredConfidence = typeof link.confidence === "number";
+    return {
+      id: relationshipId,
+      source_topic: sourceLabel,
+      target_topic: targetLabel,
+      relationship_type: relationshipType,
+      confidence: hasStoredConfidence ? link.confidence : null,
+      explanation: RELATIONSHIP_FALLBACK_EXPLANATIONS[relationshipType] || "These topics are connected in your knowledge graph.",
+      evidence: {
+        source: "graph",
+        items: [],
+        rule: link.type || "visible_graph_connection"
+      }
+    };
+  };
+
+  const loadRelationshipDetail = async (link) => {
+    if (!link) {
+      setSelectedRelationshipId(null);
+      setRelationshipDetail(null);
+      setRelationshipError("");
+      return null;
+    }
+
+    const relationshipId = link.relationship_id || link.relationshipId;
+    const localRelationship = buildLocalRelationshipDetail(link);
+    setSelectedRelationshipId(localRelationship.id);
+    setRelationshipLoading(true);
+    setRelationshipError("");
+    setRelationshipDetail(null);
+
+    if (!relationshipId) {
+      setRelationshipDetail(localRelationship);
+      setRelationshipLoading(false);
+      return localRelationship;
+    }
+
+    try {
+      const response = await api.get(`/api/relationships/${relationshipId}`);
+      const detail = response.data || localRelationship;
+      setSelectedRelationshipId(detail.id || relationshipId);
+      setRelationshipDetail(detail);
+      return detail;
+    } catch (err) {
+      setRelationshipDetail(localRelationship);
+      setRelationshipError(err.response?.data?.detail || "Stored relationship details were unavailable, so a graph fallback was shown.");
+      return localRelationship;
+    } finally {
+      setRelationshipLoading(false);
+    }
+  };
   const hasFocusedTopic = Boolean(focusedTopicLabel && (selectedNode?.type === "topic" || (graph.level || currentLevel) >= 3));
   const hoveredNode = graphWithDegree.nodes.find((node) => node.id === hoveredNodeId) || null;
   const shouldShowSearchMatches = useMemo(() => {
@@ -812,16 +909,17 @@ export default function BrainMap() {
 
     const neighborIds = new Set([selectedNodeId]);
     const connectedLabelSet = new Set();
+    const nodeLabelById = new Map(filteredData.nodes.map((node) => [node.id, node.label]));
 
     filteredData.links.forEach((edge) => {
       const sourceId = typeof edge.source === "object" ? edge.source.id : edge.source;
       const targetId = typeof edge.target === "object" ? edge.target.id : edge.target;
       if (sourceId === selectedNodeId) {
         neighborIds.add(targetId);
-        connectedLabelSet.add(targetId);
+        connectedLabelSet.add(nodeLabelById.get(targetId) || String(targetId));
       } else if (targetId === selectedNodeId) {
         neighborIds.add(sourceId);
-        connectedLabelSet.add(sourceId);
+        connectedLabelSet.add(nodeLabelById.get(sourceId) || String(sourceId));
       }
     });
 
@@ -937,11 +1035,23 @@ export default function BrainMap() {
 
   const focusNode = (nodeId) => {
     setUserSelectedNode(true);
+    setSelectedRelationshipId(null);
+    setRelationshipDetail(null);
+    setRelationshipError("");
     setSelectedNodeId(nodeId);
     const targetNode = filteredData.nodes.find((node) => node.id === nodeId);
     if (targetNode && fgRef.current) {
-      fgRef.current.centerAt(targetNode.x, targetNode.y, 500);
-      fgRef.current.zoom(currentLevel >= 4 ? 2.5 : 2.1, 500);
+      if (currentLevel === 3) {
+        requestAnimationFrame(() => {
+          if (!fgRef.current) {
+            return;
+          }
+          fgRef.current.zoomToFit(650, 80);
+        });
+      } else {
+        fgRef.current.centerAt(targetNode.x, targetNode.y, 500);
+        fgRef.current.zoom(currentLevel >= 4 ? 2.5 : 2.1, 500);
+      }
     }
   };
 
@@ -951,6 +1061,9 @@ export default function BrainMap() {
     setCurrentDomain(domain);
     setCurrentTopic(topic);
     setSelectedNodeId(null);
+    setSelectedRelationshipId(null);
+    setRelationshipDetail(null);
+    setRelationshipError("");
     setUserSelectedNode(false);
     lastSearchFocusRef.current = "";
   };
@@ -1009,6 +1122,10 @@ export default function BrainMap() {
       return;
     }
 
+    setSelectedRelationshipId(null);
+    setRelationshipDetail(null);
+    setRelationshipError("");
+
     if (selectedNodeId === node.id) {
       drillIntoNode(node);
       return;
@@ -1023,6 +1140,25 @@ export default function BrainMap() {
     }
     setUserSelectedNode(true);
     focusNode(node.id);
+  };
+
+  const handleLinkAction = async (link) => {
+    if (!link) {
+      return;
+    }
+
+    const sourceId = getLinkEndpointId(link.source);
+    const targetId = getLinkEndpointId(link.target);
+    setUserSelectedNode(false);
+    setSelectedNodeId(sourceId || targetId || null);
+    setPanelState((current) => (current.details ? current : { ...current, details: true }));
+    await loadRelationshipDetail(link);
+
+    const focusTarget = filteredData.nodes.find((node) => node.id === sourceId) || filteredData.nodes.find((node) => node.id === targetId);
+    if (focusTarget && fgRef.current) {
+      fgRef.current.centerAt(focusTarget.x || graphSize.width / 2, focusTarget.y || graphSize.height / 2, 500);
+      fgRef.current.zoom(currentLevel >= 4 ? 2.35 : 2.05, 500);
+    }
   };
 
   const handleSearchSubmit = async (event) => {
@@ -1051,6 +1187,9 @@ export default function BrainMap() {
       setCurrentDomain(nextGraph.domain || match.domain || "");
       setCurrentTopic(nextGraph.topic || match.name);
       setSelectedNodeId(null);
+      setSelectedRelationshipId(null);
+      setRelationshipDetail(null);
+      setRelationshipError("");
       setUserSelectedNode(false);
       setSearch(match.name);
       lastSearchFocusRef.current = `${query.toLowerCase()}:${match.id}`;
@@ -1081,8 +1220,12 @@ export default function BrainMap() {
       if (!fgRef.current) {
         return;
       }
-      fgRef.current.centerAt(match.x || graphSize.width / 2, match.y || graphSize.height / 2, 700);
-      fgRef.current.zoom(currentLevel >= 4 ? 2.5 : 2.15, 700);
+      if (currentLevel === 3) {
+        fgRef.current.zoomToFit(700, 80);
+      } else {
+        fgRef.current.centerAt(match.x || graphSize.width / 2, match.y || graphSize.height / 2, 700);
+        fgRef.current.zoom(currentLevel >= 4 ? 2.5 : 2.15, 700);
+      }
     });
   }, [currentLevel, filteredData.nodes, graphSize]);
 
@@ -1128,6 +1271,9 @@ export default function BrainMap() {
     setCurrentDomain(previous.domain);
     setCurrentTopic(previous.topic);
     setSelectedNodeId(null);
+    setSelectedRelationshipId(null);
+    setRelationshipDetail(null);
+    setRelationshipError("");
     setUserSelectedNode(false);
     lastSearchFocusRef.current = "";
   };
@@ -1138,6 +1284,9 @@ export default function BrainMap() {
     setCurrentDomain("");
     setCurrentTopic("");
     setSelectedNodeId(null);
+    setSelectedRelationshipId(null);
+    setRelationshipDetail(null);
+    setRelationshipError("");
     setUserSelectedNode(false);
     setSearch("");
     lastSearchFocusRef.current = "";
@@ -1374,6 +1523,11 @@ export default function BrainMap() {
               }}
               linkWidth={(link) => {
                 const baseWidth = 1 + (link.weight || 1);
+                const relationshipId = link.relationship_id || link.relationshipId;
+                const isSelectedRelationship = selectedRelationshipId && String(selectedRelationshipId) === String(relationshipId || `local:${getLinkEndpointLabel(link.source)}:${getLinkEndpointLabel(link.target)}:${link.type || "related_to"}`);
+                if (isSelectedRelationship) {
+                  return Math.min(8, baseWidth + 1.8);
+                }
                 if (!selectedNodeId) {
                   return currentLevel === 3 ? Math.min(4, baseWidth) : Math.min(6, baseWidth);
                 }
@@ -1389,6 +1543,11 @@ export default function BrainMap() {
                 return isPrimaryClusterEdge ? Math.min(7, baseWidth + 0.9) : Math.min(5, baseWidth + 0.1);
               }}
               linkColor={(link) => {
+                const relationshipId = link.relationship_id || link.relationshipId;
+                const isSelectedRelationship = selectedRelationshipId && String(selectedRelationshipId) === String(relationshipId || `local:${getLinkEndpointLabel(link.source)}:${getLinkEndpointLabel(link.target)}:${link.type || "related_to"}`);
+                if (isSelectedRelationship) {
+                  return "rgba(249, 115, 22, 0.95)";
+                }
                 if (!selectedNodeId) {
                   return currentLevel === 3 ? "rgba(59, 130, 246, 0.26)" : "rgba(59, 130, 246, 0.38)";
                 }
@@ -1416,6 +1575,7 @@ export default function BrainMap() {
               enableNodeDrag={true}
               onNodeHover={(node) => setHoveredNodeId(node?.id || null)}
               onNodeClick={handleNodeAction}
+              onLinkClick={handleLinkAction}
               nodeCanvasObject={(node, ctx, globalScale) => {
                 const label = node.label;
                 const fontSize = Math.max(9, 12 / globalScale);
@@ -1600,133 +1760,177 @@ export default function BrainMap() {
                 <p className="muted panel-toggle-subtitle">
                   {panelState.details
                     ? "Inspect the focused node and jump to related knowledge."
-                    : selectedNode
-                      ? `${selectedNode.label} - ${selectedNode.linked_count} linked item(s)`
-                      : "Click a node to inspect its related knowledge."}
+                    : relationshipDetail
+                      ? `${relationshipDetail.source_topic} -> ${relationshipDetail.target_topic}`
+                      : selectedNode
+                        ? `${selectedNode.label} - ${selectedNode.linked_count} linked item(s)`
+                        : "Click a node or edge to inspect graph details."}
                 </p>
               </span>
               <span className={`panel-toggle-chevron ${panelState.details ? "" : "collapsed"}`} aria-hidden="true" />
             </button>
-            {panelState.details && (!selectedNode ? (
-              <p className="muted">Click a node to inspect its related knowledge or zoom deeper into the map.</p>
+            {panelState.details && (!selectedNode && !relationshipDetail ? (
+              <p className="muted">Click a node or edge to inspect its related knowledge and relationships.</p>
             ) : (
               <div className="stack compact">
-                <div className="brain-detail-header">
-                  <strong>{selectedNode.label}</strong>
-                  <span className="tag">{selectedNode.group}</span>
-                  <span className="tag">{selectedNode.type}</span>
-                </div>
-                <p className="muted">{selectedNode.linked_count} linked item(s)</p>
-                {!!focusContext.connectedLabels.length && (
-                  <div>
-                    <p className="source-meta">Directly connected nodes</p>
-                    <div className="tag-list">
-                      {focusContext.connectedLabels.map((label) => (
-                        <button
-                          key={`${selectedNode.id}-${label}`}
-                          type="button"
-                          className="tag tag-button"
-                          onClick={() => currentLevel >= 3 ? openRelatedTopic(label) : focusNode(label)}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                {relationshipDetail ? (
+                  <div className="stack compact relationship-detail-card">
+                    <div className="brain-detail-header">
+                      <strong>{relationshipDetail.source_topic}{relationshipDetail.relationship_type === "note_link" ? " - " : " -> "}{relationshipDetail.target_topic}</strong>
+                      <span className="tag">{RELATIONSHIP_TYPE_LABELS[relationshipDetail.relationship_type] || relationshipDetail.relationship_type}</span>
                     </div>
-                  </div>
-                )}
-                {selectedNode.type === "topic" && (
-                  <div className="stack compact">
-                    <div className="row-between">
-                      <p className="source-meta">Topic Summary</p>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => loadTopicSummary(selectedNode.label, true)}
-                        disabled={topicSummaryLoading || refreshingTopicSummary}
-                      >
-                        {refreshingTopicSummary ? "Refreshing..." : "Refresh Summary"}
-                      </button>
+                    {relationshipLoading ? <p className="muted">Loading relationship details...</p> : null}
+                    {relationshipError ? <p className="error-text">{relationshipError}</p> : null}
+                    <div>
+                      <p className="source-meta">Why this link exists</p>
+                      <p className="muted">{relationshipDetail.explanation}</p>
                     </div>
-                    {topicSummaryLoading ? <p className="muted">Loading topic summary...</p> : null}
-                    {topicSummaryError ? <p className="error-text">{topicSummaryError}</p> : null}
-                    {topicSummary ? (
-                      <div className="stack compact">
-                        <p>{topicSummary.summary}</p>
-                        <div>
-                          <p className="source-meta">Why it matters</p>
-                          <p className="muted">{topicSummary.why_it_matters}</p>
-                        </div>
-                        {!!topicSummary.skills_unlocked?.length && (
-                          <div>
-                            <p className="source-meta">Skills unlocked</p>
-                            <div className="tag-list">
-                              {topicSummary.skills_unlocked.map((skill) => (
-                                <button
-                                  key={`${selectedNode.id}-summary-${skill}`}
-                                  type="button"
-                                  className="tag tag-button"
-                                  onClick={() => openRelatedTopic(skill)}
-                                >
-                                  {skill}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <p className="source-meta">Source: {topicSummary.source === "ai" ? "AI" : "Rules"}</p>
+                    <div className="relationship-detail-grid">
+                      <div>
+                        <p className="source-meta">Type</p>
+                        <p className="muted">{RELATIONSHIP_TYPE_LABELS[relationshipDetail.relationship_type] || relationshipDetail.relationship_type}</p>
                       </div>
-                    ) : null}
+                      <div>
+                        <p className="source-meta">Confidence</p>
+                        <p className="muted">{typeof relationshipDetail.confidence === "number" ? `${Math.round(relationshipDetail.confidence * 100)}%` : "Derived from graph"}</p>
+                      </div>
+                      <div>
+                        <p className="source-meta">Source</p>
+                        <p className="muted">{relationshipDetail.evidence?.source || "rule"}</p>
+                      </div>
+                    </div>
+                    {!!relationshipDetail.evidence?.items?.length && (
+                      <div>
+                        <p className="source-meta">Evidence</p>
+                        <ul className="simple-list">
+                          {relationshipDetail.evidence.items.map((item, index) => (
+                            <li key={`${relationshipDetail.id}-${index}-${item}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
-                )}
-                {selectedNode.summary && <p className="muted">{selectedNode.summary}</p>}
-                {selectedNode.linked_titles?.length > 0 ? (
-                  <div>
-                    <p className="source-meta">Linked notes</p>
-                    <ul className="simple-list">
-                      {selectedNode.linked_titles.map((title, index) => (
-                        <li key={`${selectedNode.id}-${index}-${title}`}>{title}</li>
-                      ))}
-                    </ul>
+                ) : null}
+                {selectedNode ? (
+                  <div className="stack compact">
+                    <div className="brain-detail-header">
+                      <strong>{selectedNode.label}</strong>
+                      <span className="tag">{selectedNode.group}</span>
+                      <span className="tag">{selectedNode.type}</span>
+                    </div>
+                    <p className="muted">{selectedNode.linked_count} linked item(s)</p>
+                    {!!focusContext.connectedLabels.length && (
+                      <div>
+                        <p className="source-meta">Directly connected nodes</p>
+                        <div className="tag-list">
+                          {focusContext.connectedLabels.map((label) => (
+                            <button
+                              key={`${selectedNode.id}-${label}`}
+                              type="button"
+                              className="tag tag-button"
+                              onClick={() => currentLevel >= 3 ? openRelatedTopic(label) : focusNode(label)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {selectedNode.type === "topic" && (
+                      <div className="stack compact">
+                        <div className="row-between">
+                          <p className="source-meta">Topic Summary</p>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => loadTopicSummary(selectedNode.label, true)}
+                            disabled={topicSummaryLoading || refreshingTopicSummary}
+                          >
+                            {refreshingTopicSummary ? "Refreshing..." : "Refresh Summary"}
+                          </button>
+                        </div>
+                        {topicSummaryLoading ? <p className="muted">Loading topic summary...</p> : null}
+                        {topicSummaryError ? <p className="error-text">{topicSummaryError}</p> : null}
+                        {topicSummary ? (
+                          <div className="stack compact">
+                            <p>{topicSummary.summary}</p>
+                            <div>
+                              <p className="source-meta">Why it matters</p>
+                              <p className="muted">{topicSummary.why_it_matters}</p>
+                            </div>
+                            {!!topicSummary.skills_unlocked?.length && (
+                              <div>
+                                <p className="source-meta">Skills unlocked</p>
+                                <div className="tag-list">
+                                  {topicSummary.skills_unlocked.map((skill) => (
+                                    <button
+                                      key={`${selectedNode.id}-summary-${skill}`}
+                                      type="button"
+                                      className="tag tag-button"
+                                      onClick={() => openRelatedTopic(skill)}
+                                    >
+                                      {skill}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            <p className="source-meta">Source: {topicSummary.source === "ai" ? "AI" : "Rules"}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                    {selectedNode.summary && <p className="muted">{selectedNode.summary}</p>}
+                    {selectedNode.linked_titles?.length > 0 ? (
+                      <div>
+                        <p className="source-meta">Linked notes</p>
+                        <ul className="simple-list">
+                          {selectedNode.linked_titles.map((title, index) => (
+                            <li key={`${selectedNode.id}-${index}-${title}`}>{title}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <p className="muted">No linked knowledge items.</p>
+                    )}
+                    <p className="source-meta">
+                      Suggested next step: {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge")
+                        ? "Click the selected node again or use Zoom Deeper."
+                        : focusContext.connectedLabels[0]
+                          ? `Explore ${focusContext.connectedLabels[0]}`
+                          : "Open this item to review it in full."}
+                    </p>
+                    <div className="brain-detail-actions">
+                      {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge") && (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => drillIntoNode(selectedNode)}
+                        >
+                          Zoom Deeper
+                        </button>
+                      )}
+                      {(selectedNode.type === "topic" || selectedNode.type === "bridge") && (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => navigate(`/topics/${encodeURIComponent(selectedNode.label)}`)}
+                        >
+                          Open Topic Page
+                        </button>
+                      )}
+                      {selectedNode.type === "knowledge" && (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => navigate(`/knowledge?focus=${encodeURIComponent(selectedNode.id.replace("knowledge-", ""))}`)}
+                        >
+                          Open Note
+                        </button>
+                      )}
+                    </div>
                   </div>
-                ) : (
-                  <p className="muted">No linked knowledge items.</p>
-                )}
-                <p className="source-meta">
-                  Suggested next step: {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge")
-                    ? "Click the selected node again or use Zoom Deeper."
-                    : focusContext.connectedLabels[0]
-                      ? `Explore ${focusContext.connectedLabels[0]}`
-                      : "Open this item to review it in full."}
-                </p>
-                <div className="brain-detail-actions">
-                  {currentLevel < 4 && (selectedNode.type === "domain" || selectedNode.type === "topic" || selectedNode.type === "bridge") && (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => drillIntoNode(selectedNode)}
-                    >
-                      Zoom Deeper
-                    </button>
-                  )}
-                  {(selectedNode.type === "topic" || selectedNode.type === "bridge") && (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => navigate(`/topics/${encodeURIComponent(selectedNode.label)}`)}
-                    >
-                      Open Topic Page
-                    </button>
-                  )}
-                  {selectedNode.type === "knowledge" && (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => navigate(`/knowledge?focus=${encodeURIComponent(selectedNode.id.replace("knowledge-", ""))}`)}
-                    >
-                      Open Note
-                    </button>
-                  )}
-                </div>
+                ) : null}
               </div>
             ))}
           </section>
@@ -1735,6 +1939,10 @@ export default function BrainMap() {
     </div>
   );
 }
+
+
+
+
 
 
 
