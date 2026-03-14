@@ -16,6 +16,7 @@ from app.services.topic_bridge_service import build_topic_bridges
 from app.services.topic_cluster_service import annotate_graph_clusters
 from app.services.topic_hierarchy_service import infer_topic_hierarchy, sync_topic_hierarchy_metadata
 from app.services.topic_linker import sync_relationships_for_user
+from app.services.learning_path_service import LEARNING_PATHS
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -58,6 +59,9 @@ FOCUSED_NEIGHBOR_NOISE_TOKENS = {
     "intro",
     "introduction",
     "basics",
+    "keyword",
+    "vector",
+    "hybrid",
 }
 
 
@@ -283,10 +287,36 @@ def _relationship_edges(context: dict, selected_topics: set[str]) -> list[GraphE
     return edges
 
 
+
+def _learning_path_neighbors(topic_name: str) -> set[str]:
+    neighbors: set[str] = set()
+    for path in LEARNING_PATHS:
+        topics = path.get("topics", [])
+        if topic_name not in topics:
+            continue
+        index = topics.index(topic_name)
+        start = max(0, index - 3)
+        end = min(len(topics), index + 4)
+        neighbors.update(topics[start:end])
+    neighbors.discard(topic_name)
+    return neighbors
+
+def _has_edge(edges: list[GraphEdge], source: str, target: str) -> bool:
+    for edge in edges:
+        edge_source = edge.source
+        edge_target = edge.target
+        if (
+            (edge_source == source and edge_target == target)
+            or (edge_source == target and edge_target == source)
+        ):
+            return True
+    return False
 def _is_noisy_focused_neighbor(topic_name: str, center_topic: str) -> bool:
     words = {word.lower() for word in topic_name.split() if word}
     center_words = {word.lower() for word in center_topic.split() if word}
     if not words:
+        return True
+    if len(words) <= 3 and words & center_words and _topic_group(topic_name) == "General":
         return True
     if len(words) <= 2 and words & FOCUSED_NEIGHBOR_NOISE_TOKENS:
         return True
@@ -307,10 +337,13 @@ def _focused_neighbor_score(topic_name: str, center_topic: str, context: dict) -
     pair_weight = pair_counts.get((topic_name, center_topic), 0) + pair_counts.get((center_topic, topic_name), 0)
     topic_count = topic_counts.get(topic_name, 0)
     group = _topic_group(topic_name)
+    path_neighbors = _learning_path_neighbors(center_topic)
 
     score = topic_count * 2.0 + pair_weight * 1.6
     if relationship is not None:
         score += relationship.confidence * 12
+    if topic_name in path_neighbors:
+        score += 5
     if group != "General":
         score += 1.5
     if topic_count <= 1 and group == "General":
@@ -333,9 +366,18 @@ def _should_include_focused_neighbor(topic_name: str, center_topic: str, context
     topic_count = topic_counts.get(topic_name, 0)
     group = _topic_group(topic_name)
     words = topic_name.split()
+    path_neighbors = _learning_path_neighbors(center_topic)
 
     if _is_noisy_focused_neighbor(topic_name, center_topic):
         return False
+    if group == "General":
+        if relationship is not None and relationship.confidence >= 0.85 and topic_count >= 2:
+            return True
+        if pair_weight >= 3 and topic_count >= 3:
+            return True
+        return False
+    if topic_name in path_neighbors and group != "General":
+        return True
     if relationship is not None and relationship.confidence >= 0.7:
         return True
     if topic_count >= 2 and pair_weight >= 1 and group != "General":
@@ -345,8 +387,6 @@ def _should_include_focused_neighbor(topic_name: str, center_topic: str, context
     if group != "General" and topic_count >= 2:
         return True
 
-    if group == "General":
-        return False
     if len(words) > 3:
         return False
     return topic_count >= 2 or pair_weight >= 2
@@ -478,6 +518,8 @@ def _build_level_three(context: dict, bridge_context: dict, domain: str | None, 
         elif relationship.target_topic == topic:
             neighbor_topics.add(relationship.source_topic)
 
+    neighbor_topics.update(_learning_path_neighbors(topic))
+
     parent_name = topic_metadata.get(topic, {}).get("parent_name")
     if isinstance(parent_name, str):
         neighbor_topics.add(parent_name)
@@ -527,6 +569,23 @@ def _build_level_three(context: dict, bridge_context: dict, domain: str | None, 
             edges.append(_cooccurrence_edge(source, target, float(weight), context["relationship_lookup"]))
 
     edges.extend(_relationship_edges(context, selected_topics))
+
+    # Keep known learning-path neighbors visually attached to the focused topic
+    # even when the stored graph evidence is still sparse.
+    for neighbor_name in _learning_path_neighbors(topic):
+        if neighbor_name not in selected_topics:
+            continue
+        if _has_edge(edges, topic, neighbor_name):
+            continue
+        edges.append(
+            GraphEdge(
+                source=topic,
+                target=neighbor_name,
+                type="topic_link",
+                weight=0.82,
+            )
+        )
+
     child_counts: Counter[str] = Counter()
     for edge in edges + bridge_edges:
         child_counts[edge.source] += 1
@@ -744,4 +803,9 @@ def build_topic_graph_for_user(db: Session, user_id: int, topic_id: int) -> Grap
         domain=_topic_group(topic.name),
         topic=topic.name,
     )
+
+
+
+
+
 

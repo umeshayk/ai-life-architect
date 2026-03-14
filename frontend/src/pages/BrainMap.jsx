@@ -43,9 +43,9 @@ const DOMAIN_ANCHORS = {
 };
 
 const CLUSTER_LAYOUT_HINTS = {
-  Retrieval: { x: 0.73, y: 0.42 },
-  Representation: { x: 0.3, y: 0.28 },
-  Storage: { x: 0.28, y: 0.74 },
+  Retrieval: { x: 0.62, y: 0.43 },
+  Representation: { x: 0.32, y: 0.3 },
+  Storage: { x: 0.32, y: 0.72 },
   Ranking: { x: 0.7, y: 0.74 },
   "Agriculture Automation": { x: 0.7, y: 0.38 },
   "Knowledge Systems": { x: 0.28, y: 0.42 },
@@ -1939,6 +1939,8 @@ export default function BrainMap() {
     </div>
   );
 }
+
+
 
 
 
