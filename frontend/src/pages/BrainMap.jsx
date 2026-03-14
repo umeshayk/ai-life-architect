@@ -506,6 +506,10 @@ export default function BrainMap() {
   const [addingSuggestion, setAddingSuggestion] = useState("");
   const [addingGapTopic, setAddingGapTopic] = useState("");
   const [refreshingExpansion, setRefreshingExpansion] = useState(false);
+  const [topicSummary, setTopicSummary] = useState(null);
+  const [topicSummaryError, setTopicSummaryError] = useState("");
+  const [topicSummaryLoading, setTopicSummaryLoading] = useState(false);
+  const [refreshingTopicSummary, setRefreshingTopicSummary] = useState(false);
   const [graphSize, setGraphSize] = useState({ width: 1200, height: 920 });
   const [userSelectedNode, setUserSelectedNode] = useState(false);
   const [panelState, setPanelState] = useState({
@@ -663,6 +667,43 @@ export default function BrainMap() {
 
   const selectedNode = graphWithDegree.nodes.find((node) => node.id === selectedNodeId) || null;
   const focusedTopicLabel = selectedNode?.type === "topic" ? selectedNode.label : currentTopic || graph.topic || "";
+
+  const loadTopicSummary = async (topicLabel, refresh = false) => {
+    if (!topicLabel) {
+      setTopicSummary(null);
+      setTopicSummaryError("");
+      return null;
+    }
+
+    if (refresh) {
+      setRefreshingTopicSummary(true);
+    } else {
+      setTopicSummaryLoading(true);
+    }
+    setTopicSummaryError("");
+
+    try {
+      const searchResponse = await api.get("/api/topics/search", { params: { q: topicLabel } });
+      const matches = searchResponse.data || [];
+      const match = matches.find((item) => item.name.toLowerCase() === topicLabel.toLowerCase()) || matches[0];
+      if (!match) {
+        setTopicSummary(null);
+        setTopicSummaryError("No saved topic summary is available for this topic yet.");
+        return null;
+      }
+
+      const summaryResponse = await api.get(`/api/topics/${match.id}/summary`, { params: { refresh } });
+      setTopicSummary(summaryResponse.data || null);
+      return summaryResponse.data || null;
+    } catch (err) {
+      setTopicSummary(null);
+      setTopicSummaryError(err.response?.data?.detail || "Unable to load the topic summary.");
+      return null;
+    } finally {
+      setTopicSummaryLoading(false);
+      setRefreshingTopicSummary(false);
+    }
+  };
   const hasFocusedTopic = Boolean(focusedTopicLabel && (selectedNode?.type === "topic" || (graph.level || currentLevel) >= 3));
   const hoveredNode = graphWithDegree.nodes.find((node) => node.id === hoveredNodeId) || null;
   const shouldShowSearchMatches = useMemo(() => {
@@ -701,6 +742,17 @@ export default function BrainMap() {
       setPanelState((current) => (current.details ? current : { ...current, details: true }));
     }
   }, [selectedNode, userSelectedNode]);
+
+  useEffect(() => {
+    if (selectedNode?.type !== "topic") {
+      setTopicSummary(null);
+      setTopicSummaryError("");
+      setTopicSummaryLoading(false);
+      setRefreshingTopicSummary(false);
+      return;
+    }
+    loadTopicSummary(selectedNode.label);
+  }, [selectedNode?.id, selectedNode?.label, selectedNode?.type]);
   const availableGroups = useMemo(() => {
     const groups = new Set(filteredData.nodes.map((node) => node.group));
     return Object.entries(GROUP_COLORS).map(([group, color]) => ({
@@ -1549,7 +1601,7 @@ export default function BrainMap() {
                   {panelState.details
                     ? "Inspect the focused node and jump to related knowledge."
                     : selectedNode
-                      ? `${selectedNode.label} · ${selectedNode.linked_count} linked item(s)`
+                      ? `${selectedNode.label} - ${selectedNode.linked_count} linked item(s)`
                       : "Click a node to inspect its related knowledge."}
                 </p>
               </span>
@@ -1580,6 +1632,50 @@ export default function BrainMap() {
                         </button>
                       ))}
                     </div>
+                  </div>
+                )}
+                {selectedNode.type === "topic" && (
+                  <div className="stack compact">
+                    <div className="row-between">
+                      <p className="source-meta">Topic Summary</p>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => loadTopicSummary(selectedNode.label, true)}
+                        disabled={topicSummaryLoading || refreshingTopicSummary}
+                      >
+                        {refreshingTopicSummary ? "Refreshing..." : "Refresh Summary"}
+                      </button>
+                    </div>
+                    {topicSummaryLoading ? <p className="muted">Loading topic summary...</p> : null}
+                    {topicSummaryError ? <p className="error-text">{topicSummaryError}</p> : null}
+                    {topicSummary ? (
+                      <div className="stack compact">
+                        <p>{topicSummary.summary}</p>
+                        <div>
+                          <p className="source-meta">Why it matters</p>
+                          <p className="muted">{topicSummary.why_it_matters}</p>
+                        </div>
+                        {!!topicSummary.skills_unlocked?.length && (
+                          <div>
+                            <p className="source-meta">Skills unlocked</p>
+                            <div className="tag-list">
+                              {topicSummary.skills_unlocked.map((skill) => (
+                                <button
+                                  key={`${selectedNode.id}-summary-${skill}`}
+                                  type="button"
+                                  className="tag tag-button"
+                                  onClick={() => openRelatedTopic(skill)}
+                                >
+                                  {skill}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <p className="source-meta">Source: {topicSummary.source === "ai" ? "AI" : "Rules"}</p>
+                      </div>
+                    ) : null}
                   </div>
                 )}
                 {selectedNode.summary && <p className="muted">{selectedNode.summary}</p>}
@@ -1639,6 +1735,12 @@ export default function BrainMap() {
     </div>
   );
 }
+
+
+
+
+
+
 
 
 

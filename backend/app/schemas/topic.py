@@ -46,9 +46,9 @@ class TopicNoteSummary(BaseModel):
 
 class TopicDetailResponse(BaseModel):
     topic: str
+    topic_id: int | None = None
     notes: list[TopicNoteSummary]
     related_topics: list[str]
-
 
 
 class TopicCreateRequest(BaseModel):
@@ -70,11 +70,20 @@ class TopicExpansionResponse(BaseModel):
     suggestions: list[str]
 
 
+class TopicSummaryResponse(BaseModel):
+    topic: str
+    summary: str
+    why_it_matters: str
+    skills_unlocked: list[str] = []
+    source: str = "rules"
+
+
 class TopicSearchResult(BaseModel):
     id: int
     name: str
     domain: str | None = None
     count: int = 0
+
 
 class KnowledgeSuggestion(BaseModel):
     suggested_topic: str
@@ -114,9 +123,6 @@ class LearningPathResponse(BaseModel):
     topics: list[LearningPathTopic]
     completed_topics: list[str] = []
     upcoming_topics: list[str] = []
-
-
-
 
 
 class KnowledgeGapItem(BaseModel):

@@ -25,12 +25,14 @@ from app.schemas.topic import (
     TopicRebuildResponse,
     TopicSearchResult,
     TopicSummary,
+    TopicSummaryResponse,
 )
 from app.services.graph_service import _topic_group, build_topic_graph_for_user
 from app.services.knowledge_expansion_service import suggest_missing_topics
 from app.services.knowledge_gap_service import build_knowledge_gap_suggestions, get_next_learning_topics
 from app.services.retrieval import _extract_item_concepts
 from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
+from app.services.topic_summary_service import get_topic_summary
 
 
 router = APIRouter(tags=["topics"])
@@ -42,8 +44,6 @@ def _build_topic_note_summary(item: KnowledgeItem) -> TopicNoteSummary:
     if len(preview_source) > 150:
         preview = f"{preview}..."
     return TopicNoteSummary(id=item.id, title=item.title, type=item.type, preview=preview or "No preview available.")
-
-
 
 
 @router.get("/api/knowledge-suggestions", response_model=list[KnowledgeSuggestion])
@@ -159,6 +159,14 @@ def get_topic_graph(topic_id: int, db: Session = Depends(get_db), current_user: 
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/api/topics/{topic_id}/summary", response_model=TopicSummaryResponse)
+def get_topic_summary_endpoint(topic_id: int, refresh: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        return TopicSummaryResponse(**get_topic_summary(db, current_user.id, topic_id, refresh=refresh))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/api/topics/{topic_id}/items", response_model=TopicItemsResponse)
 def get_topic_items(topic_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     topic = db.scalar(select(Topic).where(Topic.id == topic_id, Topic.user_id == current_user.id))
@@ -203,6 +211,7 @@ def _build_topic_detail(topic_name: str, db: Session, current_user: User) -> Top
 
         return TopicDetailResponse(
             topic=topic.name,
+            topic_id=topic.id,
             notes=[_build_topic_note_summary(item) for item in items],
             related_topics=[name for name, _ in related_counter.most_common(5)],
         )
@@ -230,6 +239,7 @@ def _build_topic_detail(topic_name: str, db: Session, current_user: User) -> Top
 
     return TopicDetailResponse(
         topic=topic_name,
+        topic_id=None,
         notes=[_build_topic_note_summary(item) for item in matched_items],
         related_topics=[name for name, _ in related_counter.most_common(5)],
     )
@@ -282,6 +292,3 @@ def reassign_user_topics(db: Session = Depends(get_db), current_user: User = Dep
 def cleanup_user_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     merged_topics = cleanup_topics(db, current_user.id)
     return TopicCleanupResponse(merged_topics=merged_topics, discovery_method="normalized")
-
-
-
