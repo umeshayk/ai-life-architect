@@ -181,3 +181,15 @@ class TopicMasteryResponse(BaseModel):
     mastery_score: float
     signals: dict = {}
     last_updated: datetime | None = None
+
+
+class DomainBridgeItem(BaseModel):
+    topic: str
+    domains: list[str]
+    confidence: float
+    source: str = "rules"
+    reason: str = ""
+
+
+class DomainBridgeListResponse(BaseModel):
+    bridges: list[DomainBridgeItem] = []

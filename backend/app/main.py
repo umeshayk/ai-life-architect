@@ -7,7 +7,7 @@ from sqlalchemy import text
 from app.core.config import get_settings
 from app.core.database import Base, engine
 from app.models import content_topic, embedding, knowledge, knowledge_connection, knowledge_event, knowledge_gap_cache, profile, topic, topic_expansion_cache, topic_mastery, topic_relationship, topic_summary, user  # noqa: F401
-from app.routers import ai, auth, connections, graph, insights, knowledge, knowledge_gaps, learning_paths, mentor, profile, recommendations, timeline, topics, upload
+from app.routers import ai, auth, bridges, connections, graph, insights, knowledge, knowledge_gaps, learning_paths, mentor, profile, recommendations, timeline, topics, upload
 
 
 settings = get_settings()
@@ -32,6 +32,9 @@ def startup() -> None:
         )
         connection.execute(text("ALTER TABLE IF EXISTS topics ADD COLUMN IF NOT EXISTS parent_topic_id INTEGER"))
         connection.execute(text("ALTER TABLE IF EXISTS topics ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 2"))
+        connection.execute(text("ALTER TABLE IF EXISTS topic_mastery ADD COLUMN IF NOT EXISTS mastery_score DOUBLE PRECISION NOT NULL DEFAULT 0"))
+        connection.execute(text("ALTER TABLE IF EXISTS topic_mastery ADD COLUMN IF NOT EXISTS signals_json TEXT NOT NULL DEFAULT '{}'"))
+        connection.execute(text("ALTER TABLE IF EXISTS topic_mastery ADD COLUMN IF NOT EXISTS last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()"))
         connection.execute(text("ALTER TABLE IF EXISTS topic_relationships ADD COLUMN IF NOT EXISTS source_topic_id INTEGER"))
         connection.execute(text("ALTER TABLE IF EXISTS topic_relationships ADD COLUMN IF NOT EXISTS target_topic_id INTEGER"))
         connection.execute(text("ALTER TABLE IF EXISTS topic_relationships ADD COLUMN IF NOT EXISTS evidence_json TEXT"))
@@ -58,6 +61,7 @@ app.include_router(recommendations.router)
 app.include_router(upload.router)
 app.include_router(ai.router)
 app.include_router(topics.router)
+app.include_router(bridges.router)
 app.include_router(learning_paths.router)
 app.include_router(mentor.router)
 app.include_router(connections.router)

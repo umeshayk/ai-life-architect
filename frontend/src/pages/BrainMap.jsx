@@ -6,6 +6,7 @@ import LearningPathsPanel from "../components/LearningPathsPanel";
 import AIMentorPanel from "../components/AIMentorPanel";
 import KnowledgeGapPanel from "../components/KnowledgeGapPanel";
 import NextBestTopicCard from "../components/NextBestTopicCard";
+import DomainBridgesCard from "../components/DomainBridgesCard";
 
 const GROUP_COLORS = {
   AI: "#3b82f6",
@@ -539,6 +540,10 @@ export default function BrainMap() {
   const [expansionError, setExpansionError] = useState("");
   const [addingSuggestion, setAddingSuggestion] = useState("");
   const [addingGapTopic, setAddingGapTopic] = useState("");
+  const [bridges, setBridges] = useState([]);
+  const [bridgesLoading, setBridgesLoading] = useState(false);
+  const [bridgesError, setBridgesError] = useState("");
+  const [addingBridgeTopic, setAddingBridgeTopic] = useState("");
   const [refreshingExpansion, setRefreshingExpansion] = useState(false);
   const [topicSummary, setTopicSummary] = useState(null);
   const [topicMastery, setTopicMastery] = useState(null);
@@ -553,6 +558,7 @@ export default function BrainMap() {
     recommendations: false,
     learningPaths: false,
     gaps: false,
+    bridges: false,
     expansion: false,
     mentor: false,
     details: false
@@ -615,6 +621,26 @@ export default function BrainMap() {
     }
   };
 
+  const loadDomainBridges = async ({ domain = currentDomain, topic = currentTopic } = {}) => {
+    setBridgesLoading(true);
+    setBridgesError("");
+    try {
+      const { data } = await api.get("/api/bridges", {
+        params: {
+          limit: 4,
+          ...(domain ? { domain } : {}),
+          ...(topic ? { topic } : {}),
+        },
+      });
+      setBridges(data?.bridges || []);
+    } catch (err) {
+      setBridges([]);
+      setBridgesError(err?.response?.data?.detail || "Unable to load domain bridges right now.");
+    } finally {
+      setBridgesLoading(false);
+    }
+  };
+
   const togglePanel = (panelKey) => {
     setPanelState((current) => ({
       ...current,
@@ -668,6 +694,7 @@ export default function BrainMap() {
   useEffect(() => {
     const recommendationTopic = currentTopic || "";
     loadRecommendations({ domain: currentDomain, topic: recommendationTopic });
+    loadDomainBridges({ domain: currentDomain, topic: recommendationTopic });
   }, [currentDomain, currentTopic]);
 
 
@@ -1411,6 +1438,7 @@ export default function BrainMap() {
       await Promise.all([
         loadGraphView({ level: currentLevel, domain: currentDomain, topic: currentTopic }),
         loadRecommendations({ domain: currentDomain, topic: currentTopic }),
+        loadDomainBridges({ domain: currentDomain, topic: currentTopic }),
       ]);
       pendingCenterLabelRef.current = focusedTopicLabel || topicName;
     } catch (err) {
@@ -1431,6 +1459,7 @@ export default function BrainMap() {
       await Promise.all([
         loadKnowledgeGaps({ level: currentLevel, domain: currentDomain, topic: currentTopic, refresh: true }),
         loadRecommendations({ domain: currentDomain, topic: currentTopic }),
+        loadDomainBridges({ domain: currentDomain, topic: currentTopic }),
         api.get("/api/learning-paths").then((response) => {
           setLearningPaths(response.data || []);
           setLearningPathsError("");
@@ -1442,6 +1471,40 @@ export default function BrainMap() {
       setKnowledgeGapsError(err.response?.data?.detail || "Unable to add that topic.");
     } finally {
       setAddingGapTopic("");
+    }
+  };
+  const handleAddBridgeTopic = async (bridge) => {
+    const topicName = typeof bridge === "string" ? bridge : bridge?.topic;
+    if (!topicName) {
+      return;
+    }
+    setAddingBridgeTopic(topicName);
+    setBridgesError("");
+    try {
+      await api.post("/api/topics/add", {
+        name: topicName,
+        source: "domain_bridge",
+        related_topic: currentTopic || undefined,
+      });
+
+      const bridgeDomain = currentDomain || bridge?.domains?.[0] || "";
+
+      await Promise.all([
+        loadDomainBridges({ domain: bridgeDomain, topic: currentTopic }),
+        loadRecommendations({ domain: currentDomain, topic: currentTopic }),
+        loadKnowledgeGaps({ level: currentLevel, domain: currentDomain, topic: currentTopic, refresh: true }),
+        api.get("/api/learning-paths").then((response) => {
+          setLearningPaths(response.data || []);
+          setLearningPathsError("");
+        }),
+        loadGraphView({ level: currentLevel, domain: currentDomain, topic: currentTopic }),
+      ]);
+
+      pendingCenterLabelRef.current = currentTopic || topicName;
+    } catch (err) {
+      setBridgesError(err.response?.data?.detail || "Unable to add that bridge topic.");
+    } finally {
+      setAddingBridgeTopic("");
     }
   };
   const handleSuggestedTopicClick = (suggestion) => {
@@ -1658,7 +1721,8 @@ export default function BrainMap() {
                 const isSelected = selectedNodeId === node.id;
                 const isNeighbor = focusContext.neighborIds.has(node.id);
                 const isDimmed = selectedNodeId && !isNeighbor;
-                const isPrimaryLevelThreeNode = currentLevel === 3 && (node.label === currentTopic || node.type === "bridge" || node.is_center);
+                const isBridgeNode = node.type === "bridge";
+                const isPrimaryLevelThreeNode = currentLevel === 3 && (node.label === currentTopic || isBridgeNode || node.is_center);
                 const isPrimaryLevelFourNode = currentLevel === 4 && node.label === currentTopic;
                 const showLevelThreeLabel = currentLevel === 3 && (
                   node.is_center
@@ -1687,6 +1751,16 @@ export default function BrainMap() {
                     : graphColor(node.group, node.importance || 0, false);
                 ctx.fill();
                 ctx.globalAlpha = 1;
+
+                if (isBridgeNode) {
+                  ctx.beginPath();
+                  ctx.arc(node.x, node.y, radius + 2, 0, 2 * Math.PI, false);
+                  ctx.setLineDash([6, 4]);
+                  ctx.strokeStyle = isDimmed ? "rgba(20, 184, 166, 0.28)" : "rgba(13, 148, 136, 0.95)";
+                  ctx.lineWidth = isSelected ? 2.8 : 2.2;
+                  ctx.stroke();
+                  ctx.setLineDash([]);
+                }
 
                 if (showLabel) {
                   ctx.font = `${fontSize}px Segoe UI`;
@@ -1742,6 +1816,17 @@ export default function BrainMap() {
             onTopicClick={handleSuggestedTopicClick}
             collapsed={!panelState.gaps}
             onToggle={() => togglePanel("gaps")}
+          />
+
+          <DomainBridgesCard
+            bridges={bridges}
+            loading={bridgesLoading}
+            error={bridgesError}
+            addingTopic={addingBridgeTopic}
+            focusedTopic={currentTopic || ""}
+            collapsed={!panelState.bridges}
+            onToggle={() => togglePanel("bridges")}
+            onAddTopic={handleAddBridgeTopic}
           />
 
           <section className="card brain-side-card suggestion-card">
