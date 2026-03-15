@@ -2025,3 +2025,22 @@ select {
 .timeline-event-topic-links {
   margin-top: 0.15rem;
 }
+
+.timeline-panel-body {
+  margin-top: 1rem;
+}
+
+.timeline-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.timeline-panel-actions .secondary-button {
+  align-self: flex-end;
+}
+
+.timeline-group-toggle-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}

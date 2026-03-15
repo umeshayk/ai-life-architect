@@ -175,6 +175,28 @@ function replayEventSummary(event) {
   return `${event.topic || "Topic"}: ${event.event_label}.`;
 }
 
+function TimelinePanel({ title, subtitle, summary, open, onToggle, children, actions }) {
+  const collapsedSubtitle = summary || subtitle;
+
+  return (
+    <section className="card">
+      <button type="button" className="panel-toggle" onClick={onToggle}>
+        <div>
+          <h3>{title}</h3>
+          <p className="muted panel-toggle-subtitle">{open ? subtitle : collapsedSubtitle}</p>
+        </div>
+        <span className={`panel-toggle-chevron ${open ? "" : "collapsed"}`} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="stack compact timeline-panel-body">
+          {actions ? <div className="timeline-panel-actions">{actions}</div> : null}
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export default function Timeline() {
   const [range, setRange] = useState("30d");
   const [groupBy, setGroupBy] = useState("week");
@@ -186,6 +208,17 @@ export default function Timeline() {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [isReplayPlaying, setIsReplayPlaying] = useState(false);
   const [replayIndex, setReplayIndex] = useState(0);
+  const [openGroups, setOpenGroups] = useState({});
+  const [openEventGroups, setOpenEventGroups] = useState({});
+  const [openPanels, setOpenPanels] = useState({
+    insight: false,
+    forecast: false,
+    weekly: false,
+    evolution: false,
+    topTopics: false,
+    events: false,
+    replay: false
+  });
 
   const loadTimeline = async (nextRange = range, nextGroupBy = groupBy) => {
     setLoading(true);
@@ -238,6 +271,27 @@ export default function Timeline() {
     () => buildChartPaths(evolution?.labels || [], evolution?.series || [], chartWidth, chartHeight, chartPadding),
     [evolution]
   );
+  const togglePanel = (panelKey) => {
+    setOpenPanels((current) => ({
+      ...current,
+      [panelKey]: !current[panelKey]
+    }));
+  };
+
+  const toggleGroup = (groupKey) => {
+    setOpenGroups((current) => ({
+      ...current,
+      [groupKey]: !current[groupKey]
+    }));
+  };
+
+  const toggleEventGroup = (groupKey) => {
+    setOpenEventGroups((current) => ({
+      ...current,
+      [groupKey]: !current[groupKey]
+    }));
+  };
+
   const yAxisTicks = useMemo(() => {
     const maxValue = Math.max(1, ...(evolution?.series || []).flatMap((entry) => entry.values));
     const tickCount = Math.min(4, maxValue);
@@ -247,6 +301,26 @@ export default function Timeline() {
   useEffect(() => {
     setReplayIndex(0);
     setIsReplayPlaying(false);
+  }, [eventGroups]);
+
+  useEffect(() => {
+    setOpenGroups((current) => {
+      const next = {};
+      groups.forEach((group, index) => {
+        next[group.date_key] = Object.prototype.hasOwnProperty.call(current, group.date_key) ? current[group.date_key] : false;
+      });
+      return next;
+    });
+  }, [groups]);
+
+  useEffect(() => {
+    setOpenEventGroups((current) => {
+      const next = {};
+      eventGroups.forEach((group, index) => {
+        next[group.date_key] = Object.prototype.hasOwnProperty.call(current, group.date_key) ? current[group.date_key] : false;
+      });
+      return next;
+    });
   }, [eventGroups]);
 
   useEffect(() => {
@@ -313,8 +387,13 @@ export default function Timeline() {
         </div>
       </section>
 
-      <section className="card">
-        <h3>AI Insight Summary</h3>
+      <TimelinePanel
+        title="AI Insight Summary"
+        subtitle="Patterns, momentum, gaps, and suggested directions from your recent activity."
+        summary={insights?.dominant_topic ? `Dominant topic: ${insights.dominant_topic}` : "No insight summary yet."}
+        open={openPanels.insight}
+        onToggle={() => togglePanel("insight")}
+      >
         <p className="timeline-insight-copy">{insights?.summary || "Not enough activity yet to generate insights."}</p>
         <div className="timeline-insight-grid">
           <div>
@@ -441,10 +520,15 @@ export default function Timeline() {
             </ul>
           </>
         )}
-      </section>
+      </TimelinePanel>
 
-      <section className="card">
-        <h3>Knowledge Forecast</h3>
+      <TimelinePanel
+        title="Knowledge Forecast"
+        subtitle="See where your current learning trajectory is likely to lead next."
+        summary={insights?.forecast?.length ? `${insights.forecast.length} domain forecasts available` : "No forecast available yet."}
+        open={openPanels.forecast}
+        onToggle={() => togglePanel("forecast")}
+      >
         {insights?.forecast?.length ? (
           <div className="stack compact">
             {insights.forecast.map((entry) => (
@@ -458,10 +542,15 @@ export default function Timeline() {
         ) : (
           <p className="muted">No forecast available yet.</p>
         )}
-      </section>
+      </TimelinePanel>
 
-      <section className="card">
-        <h3>Weekly Action Plan</h3>
+      <TimelinePanel
+        title="Weekly Action Plan"
+        subtitle="Practical next steps based on your latest graph activity."
+        summary={actionPlan.length ? `${actionPlan.length} suggested actions this week` : "No weekly plan available yet."}
+        open={openPanels.weekly}
+        onToggle={() => togglePanel("weekly")}
+      >
         {actionPlan.length ? (
           <div className="stack compact">
             {actionPlan.map((item) => (
@@ -481,10 +570,15 @@ export default function Timeline() {
         ) : (
           <p className="muted">No weekly plan available yet.</p>
         )}
-      </section>
+      </TimelinePanel>
 
-      <section className="card">
-        <h3>Knowledge Evolution Graph</h3>
+      <TimelinePanel
+        title="Knowledge Evolution Graph"
+        subtitle="See how your interests and knowledge topics changed over time."
+        summary={chartSeries.length ? `${chartSeries.length} tracked topic lines` : "No evolution data available yet."}
+        open={openPanels.evolution}
+        onToggle={() => togglePanel("evolution")}
+      >
         <p className="muted">See how your interests and knowledge topics changed over time.</p>
         {!evolution?.labels?.length || !chartSeries.length ? (
           <p className="muted">No evolution data available for this range yet.</p>
@@ -585,10 +679,15 @@ export default function Timeline() {
             </div>
           </div>
         )}
-      </section>
+      </TimelinePanel>
 
-      <section className="card">
-        <h3>Top Topics in This Period</h3>
+      <TimelinePanel
+        title="Top Topics In This Period"
+        subtitle="Your most active topics in the selected time window."
+        summary={topTopics.length ? topTopics.slice(0, 3).map((topic) => topic.name).join(", ") : "No topics yet for this range."}
+        open={openPanels.topTopics}
+        onToggle={() => togglePanel("topTopics")}
+      >
         <div className="tag-list">
           {topTopics.length ? (
             topTopics.map((topic) => (
@@ -600,84 +699,105 @@ export default function Timeline() {
             <p className="muted">No topics yet for this range.</p>
           )}
         </div>
-      </section>
+      </TimelinePanel>
 
 
-      <section className="card">
-        <h3>Knowledge Events</h3>
+      <TimelinePanel
+        title="Knowledge Events"
+        subtitle="Track how your topic graph evolves through creation, linking, expansion, path membership, and mastery updates."
+        summary={eventGroups.length ? `${eventGroups.reduce((count, group) => count + group.count, 0)} events in this period` : "No knowledge events recorded in this period yet."}
+        open={openPanels.events}
+        onToggle={() => togglePanel("events")}
+      >
         <p className="muted">Track how your topic graph evolves through creation, linking, expansion, path membership, and mastery updates.</p>
         {!eventGroups.length ? (
           <p className="muted">No knowledge events recorded in this period yet.</p>
         ) : (
           <div className="timeline-event-list stack compact">
-            {eventGroups.map((group) => (
-              <div key={group.date_key} className="timeline-event-group">
-                <div className="row-between">
-                  <div>
-                    <h4>{group.label}</h4>
-                    <p className="muted">{group.date_key}</p>
-                  </div>
-                  <span className="tag">{group.count} events</span>
-                </div>
-                <div className="stack compact">
-                  {group.events.map((event) => {
-                    const primaryTopic = event.topic?.trim();
-                    const primaryTopicHref = primaryTopic ? `/topics/${encodeURIComponent(primaryTopic)}` : null;
-                    const relatedTopicHref = event.related_topic ? `/topics/${encodeURIComponent(event.related_topic)}` : null;
-                    const EventContainer = primaryTopicHref ? Link : "article";
-                    const eventContainerProps = primaryTopicHref
-                      ? { to: primaryTopicHref, className: "timeline-event-row timeline-event-link" }
-                      : { className: "timeline-event-row" };
+            {eventGroups.map((group) => {
+              const isOpen = openEventGroups[group.date_key] ?? false;
+              return (
+                <div key={group.date_key} className="timeline-event-group">
+                  <button
+                    type="button"
+                    className="panel-toggle"
+                    onClick={() => toggleEventGroup(group.date_key)}
+                  >
+                    <div>
+                      <h4>{group.label}</h4>
+                      <p className="muted panel-toggle-subtitle">
+                        {isOpen ? group.date_key : `${group.date_key} - ${group.count} events`}
+                      </p>
+                    </div>
+                    <div className="timeline-group-toggle-meta">
+                      <span className="tag">{group.count} events</span>
+                      <span className={`panel-toggle-chevron ${isOpen ? "" : "collapsed"}`} aria-hidden="true" />
+                    </div>
+                  </button>
+                  {isOpen ? (
+                    <div className="stack compact timeline-panel-body">
+                      {group.events.map((event) => {
+                        const primaryTopic = event.topic?.trim();
+                        const primaryTopicHref = primaryTopic ? `/topics/${encodeURIComponent(primaryTopic)}` : null;
+                        const relatedTopicHref = event.related_topic ? `/topics/${encodeURIComponent(event.related_topic)}` : null;
+                        const EventContainer = primaryTopicHref ? Link : "article";
+                        const eventContainerProps = primaryTopicHref
+                          ? { to: primaryTopicHref, className: "timeline-event-row timeline-event-link" }
+                          : { className: "timeline-event-row" };
 
-                    return (
-                      <EventContainer key={event.id} {...eventContainerProps}>
-                        <div className="row-between">
-                          <strong>{event.topic || "Topic"}</strong>
-                          <span className="tag">{event.event_label}</span>
-                        </div>
-                        <p className="muted">
-                          {event.related_topic ? `${event.topic} -> ${event.related_topic}` : event.event_label}
-                        </p>
-                        <p className="source-meta">Source: {event.source}</p>
-                        {event.metadata?.path_name ? <p className="source-meta">Path: {event.metadata.path_name}</p> : null}
-                        {typeof event.metadata?.mastery_score === "number" ? (
-                          <p className="source-meta">Mastery: {Math.round(event.metadata.mastery_score * 100)}%</p>
-                        ) : null}
-                        {(primaryTopicHref || relatedTopicHref) ? (
-                          <div className="tag-list timeline-event-topic-links">
-                            {primaryTopicHref ? <span className="tag">Open {primaryTopic}</span> : null}
-                            {relatedTopicHref ? (
-                              <Link
-                                to={relatedTopicHref}
-                                className="tag tag-link"
-                                onClick={(clickEvent) => clickEvent.stopPropagation()}
-                              >
-                                Related: {event.related_topic}
-                              </Link>
+                        return (
+                          <EventContainer key={event.id} {...eventContainerProps}>
+                            <div className="row-between">
+                              <strong>{event.topic || "Topic"}</strong>
+                              <span className="tag">{event.event_label}</span>
+                            </div>
+                            <p className="muted">
+                              {event.related_topic ? `${event.topic} -> ${event.related_topic}` : event.event_label}
+                            </p>
+                            <p className="source-meta">Source: {event.source}</p>
+                            {event.metadata?.path_name ? <p className="source-meta">Path: {event.metadata.path_name}</p> : null}
+                            {typeof event.metadata?.mastery_score === "number" ? (
+                              <p className="source-meta">Mastery: {Math.round(event.metadata.mastery_score * 100)}%</p>
                             ) : null}
-                          </div>
-                        ) : null}
-                      </EventContainer>
-                    );
-                  })}
+                            {(primaryTopicHref || relatedTopicHref) ? (
+                              <div className="tag-list timeline-event-topic-links">
+                                {primaryTopicHref ? <span className="tag">Open {primaryTopic}</span> : null}
+                                {relatedTopicHref ? (
+                                  <Link
+                                    to={relatedTopicHref}
+                                    className="tag tag-link"
+                                    onClick={(clickEvent) => clickEvent.stopPropagation()}
+                                  >
+                                    Related: {event.related_topic}
+                                  </Link>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </EventContainer>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
-      </section>
+      </TimelinePanel>
 
-      <section className="card">
-        <div className="row-between">
-          <div>
-            <h3>Replay Knowledge Graph</h3>
-            <p className="muted">Watch topics and connections appear in the order they entered your graph.</p>
-          </div>
-          {!!replayEvents.length && (
+      <TimelinePanel
+        title="Replay Knowledge Graph"
+        subtitle="Watch topics and connections appear in the order they entered your graph."
+        summary={replayEvents.length ? `${replayEvents.length} replay steps available` : "No replay events available in this range yet."}
+        open={openPanels.replay}
+        onToggle={() => togglePanel("replay")}
+        actions={
+          !!replayEvents.length ? (
             <button
               type="button"
               className="secondary-button"
-              onClick={() => {
+              onClick={(event) => {
+                event.stopPropagation();
                 if (!isReplayPlaying && replayIndex >= replayEvents.length - 1) {
                   setReplayIndex(0);
                 }
@@ -686,9 +806,9 @@ export default function Timeline() {
             >
               {isReplayPlaying ? "Pause" : replayIndex >= replayEvents.length - 1 ? "Replay" : "Play"}
             </button>
-          )}
-        </div>
-
+          ) : null
+        }
+      >
         {!replayEvents.length ? (
           <p className="muted">No replay events available in this range yet.</p>
         ) : (
@@ -747,7 +867,7 @@ export default function Timeline() {
             </div>
           </div>
         )}
-      </section>
+      </TimelinePanel>
 
       {loading ? (
         <section className="card">
@@ -763,57 +883,71 @@ export default function Timeline() {
         </section>
       ) : (
         <div className="timeline-list">
-          {groups.map((group) => (
-            <section key={group.date_key} className="card timeline-group-card">
-              <div className="row-between">
-                <div>
-                  <h3>{group.label}</h3>
-                  <p className="muted">{group.date_key}</p>
-                </div>
-                <span className="tag">{group.count} items</span>
-              </div>
+          {groups.map((group) => {
+            const isOpen = openGroups[group.date_key] ?? false;
+            return (
+              <section key={group.date_key} className="card timeline-group-card">
+                <button
+                  type="button"
+                  className="panel-toggle"
+                  onClick={() => toggleGroup(group.date_key)}
+                >
+                  <div>
+                    <h3>{group.label}</h3>
+                    <p className="muted panel-toggle-subtitle">
+                      {isOpen ? group.date_key : `${group.date_key} - ${group.count} items`}
+                    </p>
+                  </div>
+                  <div className="timeline-group-toggle-meta">
+                    <span className="tag">{group.count} items</span>
+                    <span className={`panel-toggle-chevron ${isOpen ? "" : "collapsed"}`} aria-hidden="true" />
+                  </div>
+                </button>
 
-              <div className="stack compact">
-                {group.items.map((item) => (
-                  <article key={item.id} className="result-item timeline-item">
-                    <div className="row-between timeline-item-header">
-                      <div>
-                        <h4 className="timeline-item-title">
-                          <Link to={`/knowledge?focus=${item.id}`} className="link-button">
-                            {item.title}
-                          </Link>
-                        </h4>
-                        <p className="source-meta">
-                          {typeLabel(item.type)} | {formatCreatedAt(item.created_at)}
-                        </p>
-                      </div>
-                      <span className="tag">{typeLabel(item.type)}</span>
-                    </div>
+                {isOpen ? (
+                  <div className="stack compact timeline-panel-body">
+                    {group.items.map((item) => (
+                      <article key={item.id} className="result-item timeline-item">
+                        <div className="row-between timeline-item-header">
+                          <div>
+                            <h4 className="timeline-item-title">
+                              <Link to={`/knowledge?focus=${item.id}`} className="link-button">
+                                {item.title}
+                              </Link>
+                            </h4>
+                            <p className="source-meta">
+                              {typeLabel(item.type)} | {formatCreatedAt(item.created_at)}
+                            </p>
+                          </div>
+                          <span className="tag">{typeLabel(item.type)}</span>
+                        </div>
 
-                    {item.summary && <p>{item.summary}</p>}
+                        {item.summary && <p>{item.summary}</p>}
 
-                    {!!item.topics.length && (
-                      <div className="tag-list">
-                        {item.topics.map((topic) => (
-                          <Link key={`${item.id}-${topic}`} to={`/topics/${encodeURIComponent(topic)}`} className="tag tag-link">
-                            {topic}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
+                        {!!item.topics.length && (
+                          <div className="tag-list">
+                            {item.topics.map((topic) => (
+                              <Link key={`${item.id}-${topic}`} to={`/topics/${encodeURIComponent(topic)}`} className="tag tag-link">
+                                {topic}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
 
-                    {!!item.tags.length && (
-                      <div className="tag-list">
-                        {item.tags.map((tag) => (
-                          <span key={`${item.id}-${tag}`} className="tag">{tag}</span>
-                        ))}
-                      </div>
-                    )}
-                  </article>
-                ))}
-              </div>
-            </section>
-          ))}
+                        {!!item.tags.length && (
+                          <div className="tag-list">
+                            {item.tags.map((tag) => (
+                              <span key={`${item.id}-${tag}`} className="tag">{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
