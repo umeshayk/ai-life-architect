@@ -156,3 +156,18 @@ class RelationshipDetailResponse(BaseModel):
     confidence: float
     explanation: str
     evidence: dict = {}
+from pydantic import BaseModel
+
+class RecommendationItem(BaseModel):
+    topic: str
+    score: float
+    confidence: float
+    reason: str
+    source_signals: list[str] = []
+    domain: str
+    action: str = "add"
+    path_name: str | None = None
+
+
+class RecommendationListResponse(BaseModel):
+    recommendations: list[RecommendationItem] = []

@@ -5,6 +5,7 @@ import api from "../api/client";
 import LearningPathsPanel from "../components/LearningPathsPanel";
 import AIMentorPanel from "../components/AIMentorPanel";
 import KnowledgeGapPanel from "../components/KnowledgeGapPanel";
+import NextBestTopicCard from "../components/NextBestTopicCard";
 
 const GROUP_COLORS = {
   AI: "#3b82f6",
@@ -523,6 +524,9 @@ export default function BrainMap() {
   const [isSearching, setIsSearching] = useState(false);
   const [isExpandingNode, setIsExpandingNode] = useState(false);
   const [error, setError] = useState("");
+  const [recommendations, setRecommendations] = useState([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationsError, setRecommendationsError] = useState("");
   const [learningPaths, setLearningPaths] = useState([]);
   const [learningPathsError, setLearningPathsError] = useState("");
   const [knowledgeGaps, setKnowledgeGaps] = useState([]);
@@ -543,12 +547,33 @@ export default function BrainMap() {
   const [graphSize, setGraphSize] = useState({ width: 1200, height: 920 });
   const [userSelectedNode, setUserSelectedNode] = useState(false);
   const [panelState, setPanelState] = useState({
+    recommendations: false,
     learningPaths: false,
     gaps: false,
     expansion: false,
     mentor: false,
     details: false
   });
+
+  const loadRecommendations = async ({ domain = currentDomain, topic = "" } = {}) => {
+    setRecommendationsLoading(true);
+    setRecommendationsError("");
+    try {
+      const { data } = await api.get("/api/recommendations/next-topics", {
+        params: {
+          limit: 3,
+          ...(domain ? { domain } : {}),
+          ...(topic ? { topic } : {}),
+        },
+      });
+      setRecommendations(data?.recommendations || []);
+    } catch (err) {
+      setRecommendations([]);
+      setRecommendationsError(err?.response?.data?.detail || "Unable to load recommendations right now.");
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  };
 
   const togglePanel = (panelKey) => {
     setPanelState((current) => ({
@@ -599,6 +624,12 @@ export default function BrainMap() {
     loadKnowledgeGaps({ level: currentLevel, domain: currentDomain, topic: currentTopic })
       .catch((err) => setKnowledgeGapsError(err.response?.data?.detail || "Unable to load knowledge gaps."));
   }, [currentLevel, currentDomain, currentTopic]);
+
+  useEffect(() => {
+    const recommendationTopic = currentTopic || "";
+    loadRecommendations({ domain: currentDomain, topic: recommendationTopic });
+  }, [currentDomain, currentTopic]);
+
 
   useEffect(() => {
     setError("");
@@ -1337,7 +1368,10 @@ export default function BrainMap() {
       setExpansionTopic(refreshed.data?.topic || focusedTopicLabel || topicName);
       setExpansionSource(refreshed.data?.source || (refreshed.data?.cached ? "cache" : "rules"));
       setExpansionContextTopics(refreshed.data?.context_topics || []);
-      await loadGraphView({ level: currentLevel, domain: currentDomain, topic: currentTopic });
+      await Promise.all([
+        loadGraphView({ level: currentLevel, domain: currentDomain, topic: currentTopic }),
+        loadRecommendations({ domain: currentDomain, topic: currentTopic }),
+      ]);
       pendingCenterLabelRef.current = focusedTopicLabel || topicName;
     } catch (err) {
       setExpansionError(err.response?.data?.detail || "Unable to add that topic.");
@@ -1356,6 +1390,7 @@ export default function BrainMap() {
       await api.post("/api/topics/add", { name: topicName });
       await Promise.all([
         loadKnowledgeGaps({ level: currentLevel, domain: currentDomain, topic: currentTopic, refresh: true }),
+        loadRecommendations({ domain: currentDomain, topic: currentTopic }),
         api.get("/api/learning-paths").then((response) => {
           setLearningPaths(response.data || []);
           setLearningPathsError("");
@@ -1640,6 +1675,16 @@ export default function BrainMap() {
         </div>
 
         <aside className="brain-map-side-column">
+          <NextBestTopicCard
+            recommendations={recommendations}
+            loading={recommendationsLoading}
+            error={recommendationsError}
+            onTopicClick={handleSuggestedTopicClick}
+            onTopicAction={handleSuggestionAction}
+            collapsed={!panelState.recommendations}
+            onToggle={() => togglePanel("recommendations")}
+          />
+
           <LearningPathsPanel
             learningPaths={learningPaths}
             error={learningPathsError}
