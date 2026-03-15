@@ -36,6 +36,18 @@ GENERIC_JUNK = {
     "technique", "techniques", "modern approach", "modern approaches",
 }
 
+NOISE_TOKENS = {
+    "add",
+    "button",
+    "click",
+    "focu",
+    "focus",
+    "save",
+    "saved",
+    "test",
+    "testing",
+}
+
 DISPLAY_WORDS = {
     "ai": "AI",
     "ann": "ANN",
@@ -62,6 +74,12 @@ def _clean_topic_name(value: str) -> str:
     if lowered in GENERIC_JUNK:
         return ''
 
+    lower_words = [word.lower() for word in words]
+    if any(word in NOISE_TOKENS for word in lower_words):
+        return ''
+    if sum(1 for word in lower_words if word in NOISE_TOKENS) >= 1:
+        return ''
+
     formatted_words: list[str] = []
     for word in words:
         lower_word = word.lower()
@@ -74,6 +92,10 @@ def _clean_topic_name(value: str) -> str:
 
     candidate = ' '.join(formatted_words).strip()
     if not candidate or candidate.lower() in GENERIC_JUNK:
+        return ''
+
+    candidate_key = canonical_topic_key(candidate)
+    if any(token in candidate_key.split() for token in NOISE_TOKENS):
         return ''
     return candidate
 
@@ -129,8 +151,24 @@ def _build_context_topics(db: Session, user_id: int, focused_topic: Topic | None
                 if sibling_name and sibling_name.lower() != lowered:
                     neighbor_scores[sibling_name] = neighbor_scores.get(sibling_name, 0.0) + float(count) * 2
 
-    ordered = [name for name, _ in sorted(neighbor_scores.items(), key=lambda item: (-item[1], item[0]))]
-    return ordered[:7]
+    ordered = []
+    for name, _ in sorted(neighbor_scores.items(), key=lambda item: (-item[1], item[0])):
+        cleaned = _clean_topic_name(name)
+        if not cleaned:
+            continue
+        if canonical_topic_key(cleaned) == canonical_topic_key(topic_name):
+            continue
+        ordered.append(cleaned)
+
+    deduped = []
+    seen = set()
+    for name in ordered:
+        key = canonical_topic_key(name)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(name)
+    return deduped[:7]
 
 
 def _rule_based_stack_suggestions(topic_name: str, context_topics: list[str]) -> list[str]:

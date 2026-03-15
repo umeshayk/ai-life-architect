@@ -558,6 +558,18 @@ export default function BrainMap() {
     details: false
   });
 
+  const ensureTopicRecord = async (topicLabel) => {
+    const searchResponse = await api.get("/api/topics/search", { params: { q: topicLabel } });
+    const matches = searchResponse.data || [];
+    const exact = matches.find((item) => item.name?.toLowerCase() === topicLabel.toLowerCase()) || matches[0];
+    if (exact?.id) {
+      return exact;
+    }
+
+    const createResponse = await api.post("/api/topics/add", { name: topicLabel });
+    return createResponse.data?.topic || null;
+  };
+
   const loadTopicMastery = async (topicLabel) => {
     if (!topicLabel) {
       setTopicMastery(null);
@@ -567,15 +579,13 @@ export default function BrainMap() {
     setTopicMasteryLoading(true);
     setTopicMasteryError("");
     try {
-      const searchResponse = await api.get("/api/topics/search", { params: { q: topicLabel } });
-      const matches = searchResponse.data || [];
-      const exact = matches.find((item) => item.name?.toLowerCase() === topicLabel.toLowerCase()) || matches[0];
-      if (!exact?.id) {
+      const topicRecord = await ensureTopicRecord(topicLabel);
+      if (!topicRecord?.id) {
         setTopicMastery(null);
-        setTopicMasteryError("Mastery is only available for saved topics.");
+        setTopicMasteryError("Unable to save this topic for mastery tracking yet.");
         return;
       }
-      const masteryResponse = await api.get(`/api/topics/${exact.id}/mastery`);
+      const masteryResponse = await api.get(`/api/topics/${topicRecord.id}/mastery`);
       setTopicMastery(masteryResponse.data || null);
     } catch (err) {
       setTopicMastery(null);
@@ -769,16 +779,14 @@ export default function BrainMap() {
     setTopicSummaryError("");
 
     try {
-      const searchResponse = await api.get("/api/topics/search", { params: { q: topicLabel } });
-      const matches = searchResponse.data || [];
-      const match = matches.find((item) => item.name.toLowerCase() === topicLabel.toLowerCase()) || matches[0];
-      if (!match) {
+      const topicRecord = await ensureTopicRecord(topicLabel);
+      if (!topicRecord?.id) {
         setTopicSummary(null);
         setTopicSummaryError("No saved topic summary is available for this topic yet.");
         return null;
       }
 
-      const summaryResponse = await api.get(`/api/topics/${match.id}/summary`, { params: { refresh } });
+      const summaryResponse = await api.get(`/api/topics/${topicRecord.id}/summary`, { params: { refresh } });
       setTopicSummary(summaryResponse.data || null);
       return summaryResponse.data || null;
     } catch (err) {
