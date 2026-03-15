@@ -25,6 +25,24 @@ class TimelineGroup(BaseModel):
     items: list[TimelineItem]
 
 
+class KnowledgeEventItem(BaseModel):
+    id: int
+    event_type: str
+    event_label: str
+    topic: str | None = None
+    related_topic: str | None = None
+    source: str
+    metadata: dict = {}
+    created_at: datetime
+
+
+class KnowledgeEventGroup(BaseModel):
+    label: str
+    date_key: str
+    count: int
+    events: list[KnowledgeEventItem]
+
+
 class TimelineSummary(BaseModel):
     total_items: int
     most_active_period: str
@@ -88,6 +106,7 @@ class TimelineInsights(BaseModel):
 
 class TimelineResponse(BaseModel):
     groups: list[TimelineGroup]
+    event_groups: list[KnowledgeEventGroup] = []
     top_topics: list[TimelineTopicCount]
     summary: TimelineSummary
     insights: TimelineInsights

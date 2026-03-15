@@ -53,6 +53,8 @@ class TopicDetailResponse(BaseModel):
 
 class TopicCreateRequest(BaseModel):
     name: str
+    source: str | None = None
+    related_topic: str | None = None
 
 
 class TopicCreateResponse(BaseModel):

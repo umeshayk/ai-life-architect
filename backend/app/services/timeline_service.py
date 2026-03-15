@@ -10,6 +10,7 @@ from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.schemas.evolution import EvolutionResponse, EvolutionSeries
 from app.services.forecast_service import build_knowledge_forecast
+from app.services.timeline_event_service import build_event_groups, list_knowledge_events
 from app.services.topic_service import build_stable_topic_counts
 from app.schemas.timeline import (
     KnowledgeGrowthPoint,
@@ -140,7 +141,8 @@ def get_timeline(db: Session, user_id: int, range_key: str = "30d", group_by: st
     evolution = _build_evolution_data(items, all_items, normalized_range, normalized_group, limit_topics=8)
     summary = _build_summary(groups, top_topics)
     insights = _build_insights(items, all_items, top_topics, normalized_range, evolution)
-    return TimelineResponse(groups=groups, top_topics=top_topics, summary=summary, insights=insights)
+    event_groups = build_event_groups(list_knowledge_events(db, user_id, normalized_range))
+    return TimelineResponse(groups=groups, event_groups=event_groups, top_topics=top_topics, summary=summary, insights=insights)
 
 
 def get_timeline_evolution(

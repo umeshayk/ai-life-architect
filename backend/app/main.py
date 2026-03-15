@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.database import Base, engine
-from app.models import content_topic, embedding, knowledge, knowledge_connection, knowledge_gap_cache, profile, topic, topic_expansion_cache, topic_mastery, topic_relationship, topic_summary, user  # noqa: F401
+from app.models import content_topic, embedding, knowledge, knowledge_connection, knowledge_event, knowledge_gap_cache, profile, topic, topic_expansion_cache, topic_mastery, topic_relationship, topic_summary, user  # noqa: F401
 from app.routers import ai, auth, connections, graph, insights, knowledge, knowledge_gaps, learning_paths, mentor, profile, recommendations, timeline, topics, upload
 
 

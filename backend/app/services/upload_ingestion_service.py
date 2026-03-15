@@ -122,7 +122,7 @@ def finalize_ingested_item(
 
     sync_knowledge_embedding(db, item)
     if not skip_topic_generation:
-        assign_topics_to_item(db, item)
+        assign_topics_to_item(db, item, source_method="upload")
         loaded_item = load_knowledge_item_with_relations(db, item.id) or item
         linked_topic_names = [
             content_topic.topic.name

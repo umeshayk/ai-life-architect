@@ -76,6 +76,105 @@ function shouldRenderAxisLabel(index, totalLabels, groupBy) {
   return index === 0 || index === totalLabels - 1 || index % step === 0;
 }
 
+function flattenReplayEvents(eventGroups) {
+  return [...eventGroups]
+    .flatMap((group) => group.events || [])
+    .slice()
+    .sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime());
+}
+
+function replayEdgeKey(source, target) {
+  return [source, target].sort().join("::");
+}
+
+function buildReplaySnapshot(events, activeIndex) {
+  if (!events.length || activeIndex < 0) {
+    return { nodes: [], edges: [] };
+  }
+
+  const visibleEvents = events.slice(0, activeIndex + 1);
+  const nodeMap = new Map();
+  const edgeMap = new Map();
+
+  visibleEvents.forEach((event, index) => {
+    if (event.topic && !nodeMap.has(event.topic)) {
+      nodeMap.set(event.topic, {
+        id: event.topic,
+        label: event.topic,
+        firstSeenIndex: index
+      });
+    }
+
+    if (event.related_topic && !nodeMap.has(event.related_topic)) {
+      nodeMap.set(event.related_topic, {
+        id: event.related_topic,
+        label: event.related_topic,
+        firstSeenIndex: index
+      });
+    }
+
+    if (event.topic && event.related_topic) {
+      const edgeId = replayEdgeKey(event.topic, event.related_topic);
+      if (!edgeMap.has(edgeId)) {
+        edgeMap.set(edgeId, {
+          id: edgeId,
+          source: event.related_topic,
+          target: event.topic,
+          firstSeenIndex: index
+        });
+      }
+    }
+  });
+
+  const orderedNodes = [...nodeMap.values()].sort((left, right) => left.firstSeenIndex - right.firstSeenIndex);
+  const centerX = 480;
+  const centerY = 220;
+  const positionedNodes = orderedNodes.map((node, index) => {
+    if (index === 0) {
+      return { ...node, x: centerX, y: centerY, radius: 30 };
+    }
+
+    const ring = Math.floor((index - 1) / 6) + 1;
+    const indexInRing = (index - 1) % 6;
+    const itemsInRing = Math.min(6, orderedNodes.length - (ring - 1) * 6 - 1);
+    const angle = (Math.PI * 2 * indexInRing) / Math.max(itemsInRing, 1) - Math.PI / 2;
+    const radius = 95 + ring * 72;
+    return {
+      ...node,
+      x: centerX + Math.cos(angle) * radius,
+      y: centerY + Math.sin(angle) * radius,
+      radius: 22
+    };
+  });
+
+  const positionedNodeMap = new Map(positionedNodes.map((node) => [node.id, node]));
+  const positionedEdges = [...edgeMap.values()]
+    .map((edge) => ({
+      ...edge,
+      sourceNode: positionedNodeMap.get(edge.source),
+      targetNode: positionedNodeMap.get(edge.target)
+    }))
+    .filter((edge) => edge.sourceNode && edge.targetNode);
+
+  return { nodes: positionedNodes, edges: positionedEdges };
+}
+
+function replayEventSummary(event) {
+  if (!event) {
+    return "Start replay to see how your knowledge graph evolved.";
+  }
+
+  if (event.related_topic) {
+    return `${event.topic} connected with ${event.related_topic} via ${event.event_label.toLowerCase()}.`;
+  }
+
+  if (typeof event.metadata?.mastery_score === "number") {
+    return `${event.topic} mastery reached ${Math.round(event.metadata.mastery_score * 100)}%.`;
+  }
+
+  return `${event.topic || "Topic"}: ${event.event_label}.`;
+}
+
 export default function Timeline() {
   const [range, setRange] = useState("30d");
   const [groupBy, setGroupBy] = useState("week");
@@ -85,6 +184,8 @@ export default function Timeline() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [hoveredPoint, setHoveredPoint] = useState(null);
+  const [isReplayPlaying, setIsReplayPlaying] = useState(false);
+  const [replayIndex, setReplayIndex] = useState(0);
 
   const loadTimeline = async (nextRange = range, nextGroupBy = groupBy) => {
     setLoading(true);
@@ -121,8 +222,15 @@ export default function Timeline() {
   const summary = timeline?.summary;
   const insights = timeline?.insights;
   const groups = timeline?.groups || [];
+  const eventGroups = timeline?.event_groups || [];
   const topTopics = timeline?.top_topics || [];
   const hasItems = useMemo(() => groups.some((group) => group.count > 0), [groups]);
+  const replayEvents = useMemo(() => flattenReplayEvents(eventGroups), [eventGroups]);
+  const replaySnapshot = useMemo(
+    () => buildReplaySnapshot(replayEvents, Math.min(replayIndex, replayEvents.length - 1)),
+    [replayEvents, replayIndex]
+  );
+  const activeReplayEvent = replayEvents.length ? replayEvents[Math.min(replayIndex, replayEvents.length - 1)] : null;
   const chartWidth = 920;
   const chartHeight = 320;
   const chartPadding = { top: 24, right: 24, bottom: 48, left: 40 };
@@ -135,6 +243,30 @@ export default function Timeline() {
     const tickCount = Math.min(4, maxValue);
     return Array.from({ length: tickCount + 1 }, (_, index) => Math.round((maxValue * index) / tickCount));
   }, [evolution]);
+
+  useEffect(() => {
+    setReplayIndex(0);
+    setIsReplayPlaying(false);
+  }, [eventGroups]);
+
+  useEffect(() => {
+    if (!isReplayPlaying || replayEvents.length <= 1) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setReplayIndex((current) => {
+        if (current >= replayEvents.length - 1) {
+          window.clearInterval(timer);
+          setIsReplayPlaying(false);
+          return current;
+        }
+        return current + 1;
+      });
+    }, 1100);
+
+    return () => window.clearInterval(timer);
+  }, [isReplayPlaying, replayEvents.length]);
 
   return (
     <div className="stack">
@@ -468,6 +600,153 @@ export default function Timeline() {
             <p className="muted">No topics yet for this range.</p>
           )}
         </div>
+      </section>
+
+
+      <section className="card">
+        <h3>Knowledge Events</h3>
+        <p className="muted">Track how your topic graph evolves through creation, linking, expansion, path membership, and mastery updates.</p>
+        {!eventGroups.length ? (
+          <p className="muted">No knowledge events recorded in this period yet.</p>
+        ) : (
+          <div className="timeline-event-list stack compact">
+            {eventGroups.map((group) => (
+              <div key={group.date_key} className="timeline-event-group">
+                <div className="row-between">
+                  <div>
+                    <h4>{group.label}</h4>
+                    <p className="muted">{group.date_key}</p>
+                  </div>
+                  <span className="tag">{group.count} events</span>
+                </div>
+                <div className="stack compact">
+                  {group.events.map((event) => {
+                    const primaryTopic = event.topic?.trim();
+                    const primaryTopicHref = primaryTopic ? `/topics/${encodeURIComponent(primaryTopic)}` : null;
+                    const relatedTopicHref = event.related_topic ? `/topics/${encodeURIComponent(event.related_topic)}` : null;
+                    const EventContainer = primaryTopicHref ? Link : "article";
+                    const eventContainerProps = primaryTopicHref
+                      ? { to: primaryTopicHref, className: "timeline-event-row timeline-event-link" }
+                      : { className: "timeline-event-row" };
+
+                    return (
+                      <EventContainer key={event.id} {...eventContainerProps}>
+                        <div className="row-between">
+                          <strong>{event.topic || "Topic"}</strong>
+                          <span className="tag">{event.event_label}</span>
+                        </div>
+                        <p className="muted">
+                          {event.related_topic ? `${event.topic} -> ${event.related_topic}` : event.event_label}
+                        </p>
+                        <p className="source-meta">Source: {event.source}</p>
+                        {event.metadata?.path_name ? <p className="source-meta">Path: {event.metadata.path_name}</p> : null}
+                        {typeof event.metadata?.mastery_score === "number" ? (
+                          <p className="source-meta">Mastery: {Math.round(event.metadata.mastery_score * 100)}%</p>
+                        ) : null}
+                        {(primaryTopicHref || relatedTopicHref) ? (
+                          <div className="tag-list timeline-event-topic-links">
+                            {primaryTopicHref ? <span className="tag">Open {primaryTopic}</span> : null}
+                            {relatedTopicHref ? (
+                              <Link
+                                to={relatedTopicHref}
+                                className="tag tag-link"
+                                onClick={(clickEvent) => clickEvent.stopPropagation()}
+                              >
+                                Related: {event.related_topic}
+                              </Link>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </EventContainer>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="row-between">
+          <div>
+            <h3>Replay Knowledge Graph</h3>
+            <p className="muted">Watch topics and connections appear in the order they entered your graph.</p>
+          </div>
+          {!!replayEvents.length && (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                if (!isReplayPlaying && replayIndex >= replayEvents.length - 1) {
+                  setReplayIndex(0);
+                }
+                setIsReplayPlaying((current) => !current);
+              }}
+            >
+              {isReplayPlaying ? "Pause" : replayIndex >= replayEvents.length - 1 ? "Replay" : "Play"}
+            </button>
+          )}
+        </div>
+
+        {!replayEvents.length ? (
+          <p className="muted">No replay events available in this range yet.</p>
+        ) : (
+          <div className="timeline-replay-shell stack compact">
+            <div className="timeline-replay-controls">
+              <div className="timeline-replay-range-row">
+                <input
+                  type="range"
+                  min="0"
+                  max={Math.max(replayEvents.length - 1, 0)}
+                  value={Math.min(replayIndex, replayEvents.length - 1)}
+                  onChange={(event) => {
+                    setReplayIndex(Number(event.target.value));
+                    setIsReplayPlaying(false);
+                  }}
+                />
+                <span className="tag">
+                  Step {Math.min(replayIndex + 1, replayEvents.length)} / {replayEvents.length}
+                </span>
+              </div>
+              <div className="timeline-replay-summary">
+                <strong>{activeReplayEvent?.event_label || "Ready"}</strong>
+                <p className="muted">{replayEventSummary(activeReplayEvent)}</p>
+                {activeReplayEvent ? (
+                  <p className="source-meta">
+                    {formatCreatedAt(activeReplayEvent.created_at)} | Source: {activeReplayEvent.source}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="timeline-replay-stage">
+              <svg viewBox="0 0 960 440" className="timeline-replay-graph" role="img" aria-label="Knowledge graph replay">
+                {replaySnapshot.edges.map((edge) => (
+                  <line
+                    key={edge.id}
+                    x1={edge.sourceNode.x}
+                    y1={edge.sourceNode.y}
+                    x2={edge.targetNode.x}
+                    y2={edge.targetNode.y}
+                    className="timeline-replay-edge"
+                  />
+                ))}
+                {replaySnapshot.nodes.map((node, index) => (
+                  <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
+                    <circle
+                      r={node.radius}
+                      className={index === 0 ? "timeline-replay-node primary" : "timeline-replay-node"}
+                    />
+                    <text y={node.radius + 22} textAnchor="middle" className="timeline-replay-label">
+                      {node.label}
+                    </text>
+                  </g>
+                ))}
+              </svg>
+            </div>
+          </div>
+        )}
       </section>
 
       {loading ? (

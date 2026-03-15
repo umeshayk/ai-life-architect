@@ -13,6 +13,7 @@ from app.models.topic_relationship import TopicRelationship
 from app.services.learning_path_service import LEARNING_PATHS
 from app.services.topic_normalizer_service import canonical_topic_key
 from app.services.topic_summary_service import get_topic_summary
+from app.services.timeline_event_service import log_knowledge_event
 
 TOPIC_VIEW_WEIGHT = 0.18
 LINKED_NOTE_WEIGHT = 0.28
@@ -131,8 +132,19 @@ def get_topic_mastery(db: Session, user_id: int, topic_id: int, track_view: bool
     record = _ensure_mastery_record(db, user_id, topic.id)
     existing_signals = _deserialize_signals(record.signals_json)
     signals = _build_signals(db, user_id, topic, existing_signals, increment_view=track_view)
+    previous_score = float(record.mastery_score or 0.0)
+    next_score = _compute_mastery_score(signals)
     record.signals_json = _serialize_signals(signals)
-    record.mastery_score = _compute_mastery_score(signals)
+    record.mastery_score = next_score
+    if abs(next_score - previous_score) >= 0.01:
+        log_knowledge_event(
+            db,
+            user_id=user_id,
+            event_type="topic_mastery_updated",
+            topic_id=topic.id,
+            source="mastery",
+            metadata={"previous_score": round(previous_score, 2), "mastery_score": round(next_score, 2)},
+        )
     db.commit()
     db.refresh(record)
 
@@ -158,8 +170,19 @@ def record_mentor_interaction(db: Session, user_id: int, topic_name: str | None)
     signals = _deserialize_signals(record.signals_json)
     signals['mentor_interactions'] = int(signals.get('mentor_interactions', 0)) + 1
     signals = _build_signals(db, user_id, topic, signals, increment_view=False)
+    previous_score = float(record.mastery_score or 0.0)
+    next_score = _compute_mastery_score(signals)
     record.signals_json = _serialize_signals(signals)
-    record.mastery_score = _compute_mastery_score(signals)
+    record.mastery_score = next_score
+    if abs(next_score - previous_score) >= 0.01:
+        log_knowledge_event(
+            db,
+            user_id=user_id,
+            event_type="topic_mastery_updated",
+            topic_id=topic.id,
+            source="mentor",
+            metadata={"previous_score": round(previous_score, 2), "mastery_score": round(next_score, 2)},
+        )
     db.commit()
 
 

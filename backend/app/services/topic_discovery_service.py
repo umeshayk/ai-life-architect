@@ -10,6 +10,7 @@ from app.models.knowledge_connection import KnowledgeConnection
 from app.models.topic import Topic
 from app.services.topic_extractor import extract_clean_topics, extract_clean_topic_scores, extract_topic_phrases, tokenize_topic_segment
 from app.services.topic_normalizer_service import get_or_create_normalized_topic, merge_similar_topics, normalize_topic_label
+from app.services.timeline_event_service import build_topic_path_events, log_knowledge_event
 
 
 STOP_WORDS = {
@@ -503,7 +504,7 @@ def discover_topic_assignments(items: list[KnowledgeItem]) -> dict[int, list[tup
     return assignments
 
 
-def _get_or_create_topic(db: Session, user_id: int, name: str) -> tuple[Topic, bool]:
+def _get_or_create_topic(db: Session, user_id: int, name: str, source_method: str = "discovery") -> tuple[Topic, bool]:
     topic, created = get_or_create_normalized_topic(db, user_id, name)
     if topic is None:
         fallback_name = normalize_topic_label(name)
@@ -515,7 +516,12 @@ def _get_or_create_topic(db: Session, user_id: int, name: str) -> tuple[Topic, b
         topic = Topic(user_id=user_id, name=fallback_name)
         db.add(topic)
         db.flush()
+        log_knowledge_event(db, user_id=user_id, event_type="topic_created", topic_id=topic.id, source=source_method, metadata={"topic_name": topic.name})
+        build_topic_path_events(db, user_id=user_id, topic=topic, source=source_method)
         return topic, True
+    if created:
+        log_knowledge_event(db, user_id=user_id, event_type="topic_created", topic_id=topic.id, source=source_method, metadata={"topic_name": topic.name})
+        build_topic_path_events(db, user_id=user_id, topic=topic, source=source_method)
     return topic, created
 
 
@@ -527,7 +533,7 @@ def _load_user_items(db: Session, user_id: int) -> list[KnowledgeItem]:
     ).all()
 
 
-def assign_topics_for_item(db: Session, item: KnowledgeItem) -> tuple[int, int]:
+def assign_topics_for_item(db: Session, item: KnowledgeItem, source_method: str = "discovery") -> tuple[int, int]:
     assignments, _ = _build_item_topic_assignments([item])
     item_assignments = assignments.get(item.id, [])
 
@@ -538,7 +544,7 @@ def assign_topics_for_item(db: Session, item: KnowledgeItem) -> tuple[int, int]:
     links_created = 0
     seen_topic_ids: set[int] = set()
     for label, confidence in item_assignments:
-        topic, created = _get_or_create_topic(db, item.user_id, label)
+        topic, created = _get_or_create_topic(db, item.user_id, label, source_method=source_method)
         if topic.id in seen_topic_ids:
             continue
         seen_topic_ids.add(topic.id)
@@ -552,6 +558,7 @@ def assign_topics_for_item(db: Session, item: KnowledgeItem) -> tuple[int, int]:
                 confidence_score=confidence,
             )
         )
+        log_knowledge_event(db, user_id=item.user_id, event_type="topic_linked", topic_id=topic.id, source=source_method, metadata={"item_id": item.id, "item_title": item.title, "confidence": confidence})
         links_created += 1
 
     db.commit()
@@ -578,7 +585,7 @@ def discover_topics_for_user(db: Session, user_id: int, reset_topics: bool = Tru
     for item in items:
         seen_topic_ids: set[int] = set()
         for label, confidence in assignments.get(item.id, []):
-            topic, created = _get_or_create_topic(db, user_id, label)
+            topic, created = _get_or_create_topic(db, user_id, label, source_method="discovery")
             if topic.id in seen_topic_ids:
                 continue
             seen_topic_ids.add(topic.id)
@@ -592,6 +599,7 @@ def discover_topics_for_user(db: Session, user_id: int, reset_topics: bool = Tru
                     confidence_score=confidence,
                 )
             )
+            log_knowledge_event(db, user_id=user_id, event_type="topic_linked", topic_id=topic.id, source="discovery", metadata={"item_id": item.id, "item_title": item.title, "confidence": confidence})
             links_created += 1
     db.commit()
     merge_similar_topics(db, user_id)

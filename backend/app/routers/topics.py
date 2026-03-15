@@ -34,6 +34,7 @@ from app.services.knowledge_expansion_service import suggest_missing_topics
 from app.services.knowledge_gap_service import build_knowledge_gap_suggestions, get_next_learning_topics
 from app.services.retrieval import _extract_item_concepts
 from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
+from app.services.timeline_event_service import build_topic_path_events, log_knowledge_event
 from app.services.relationship_service import get_relationship_detail
 from app.services.topic_summary_service import get_topic_summary
 from app.services.mastery_service import get_topic_mastery
@@ -75,6 +76,8 @@ def list_topics(db: Session = Depends(get_db), current_user: User = Depends(get_
 @router.post("/api/topics/add", response_model=TopicCreateResponse)
 def add_topic(payload: TopicCreateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     name = (payload.name or "").strip()
+    source = (payload.source or "manual").strip() or "manual"
+    related_topic_name = (payload.related_topic or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Topic name is required")
 
@@ -84,7 +87,26 @@ def add_topic(payload: TopicCreateRequest, db: Session = Depends(get_db), curren
             func.lower(Topic.name) == name.lower(),
         )
     )
+    related_topic = None
+    if related_topic_name:
+        related_topic = db.scalar(
+            select(Topic).where(
+                Topic.user_id == current_user.id,
+                func.lower(Topic.name) == related_topic_name.lower(),
+            )
+        )
     if existing is not None:
+        if source == "knowledge_expansion":
+            log_knowledge_event(
+                db,
+                user_id=current_user.id,
+                event_type="topic_expanded",
+                topic_id=existing.id,
+                related_topic_id=related_topic.id if related_topic else None,
+                source=source,
+                metadata={"topic_name": existing.name, "related_topic_name": related_topic_name or None},
+            )
+            db.commit()
         return TopicCreateResponse(
             topic=TopicSummary(
                 id=existing.id,
@@ -98,6 +120,26 @@ def add_topic(payload: TopicCreateRequest, db: Session = Depends(get_db), curren
 
     topic = Topic(user_id=current_user.id, name=name, type="standard", level=2)
     db.add(topic)
+    db.flush()
+    log_knowledge_event(
+        db,
+        user_id=current_user.id,
+        event_type="topic_created",
+        topic_id=topic.id,
+        source=source,
+        metadata={"topic_name": topic.name},
+    )
+    build_topic_path_events(db, user_id=current_user.id, topic=topic, source=source)
+    if source == "knowledge_expansion":
+        log_knowledge_event(
+            db,
+            user_id=current_user.id,
+            event_type="topic_expanded",
+            topic_id=topic.id,
+            related_topic_id=related_topic.id if related_topic else None,
+            source=source,
+            metadata={"topic_name": topic.name, "related_topic_name": related_topic_name or None},
+        )
     db.commit()
     db.refresh(topic)
     return TopicCreateResponse(

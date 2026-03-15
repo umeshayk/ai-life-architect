@@ -9,10 +9,11 @@ from app.models.topic import Topic
 from app.services.topic_discovery_service import assign_topics_for_item as assign_topics_directly_for_item
 from app.services.topic_discovery_service import discover_topics_for_user, preview_topic_discovery_for_item, reassign_topics_for_user
 from app.services.topic_normalizer_service import merge_similar_topics
+from app.services.timeline_event_service import build_topic_path_events, log_knowledge_event
 
 
-def assign_topics_to_item(db: Session, item: KnowledgeItem) -> tuple[int, int]:
-    topics_created, links_created = assign_topics_directly_for_item(db, item)
+def assign_topics_to_item(db: Session, item: KnowledgeItem, source_method: str = "discovery") -> tuple[int, int]:
+    topics_created, links_created = assign_topics_directly_for_item(db, item, source_method=source_method)
     return topics_created, links_created
 
 
