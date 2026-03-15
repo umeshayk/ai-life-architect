@@ -688,6 +688,11 @@ export default function BrainMap() {
       return;
     }
 
+    const graphLevel = graph.level || currentLevel;
+    if (graphLevel < 3) {
+      return;
+    }
+
     const preferredLabel = currentTopic || graph.topic || "";
     if (!preferredLabel) {
       return;
@@ -697,7 +702,7 @@ export default function BrainMap() {
     if (matchingNode) {
       setSelectedNodeId(matchingNode.id);
     }
-  }, [currentTopic, graph.topic, graph.nodes, selectedNodeId]);
+  }, [currentLevel, currentTopic, graph.level, graph.topic, graph.nodes, selectedNodeId]);
 
 
   const graphWithDegree = useMemo(() => {
