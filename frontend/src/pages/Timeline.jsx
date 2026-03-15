@@ -306,20 +306,34 @@ export default function Timeline() {
   useEffect(() => {
     setOpenGroups((current) => {
       const next = {};
-      groups.forEach((group, index) => {
+      groups.forEach((group) => {
         next[group.date_key] = Object.prototype.hasOwnProperty.call(current, group.date_key) ? current[group.date_key] : false;
       });
-      return next;
+
+      const currentKeys = Object.keys(current);
+      const nextKeys = Object.keys(next);
+      const unchanged =
+        currentKeys.length === nextKeys.length &&
+        nextKeys.every((key) => current[key] === next[key]);
+
+      return unchanged ? current : next;
     });
   }, [groups]);
 
   useEffect(() => {
     setOpenEventGroups((current) => {
       const next = {};
-      eventGroups.forEach((group, index) => {
+      eventGroups.forEach((group) => {
         next[group.date_key] = Object.prototype.hasOwnProperty.call(current, group.date_key) ? current[group.date_key] : false;
       });
-      return next;
+
+      const currentKeys = Object.keys(current);
+      const nextKeys = Object.keys(next);
+      const unchanged =
+        currentKeys.length === nextKeys.length &&
+        nextKeys.every((key) => current[key] === next[key]);
+
+      return unchanged ? current : next;
     });
   }, [eventGroups]);
 
@@ -394,14 +408,39 @@ export default function Timeline() {
         open={openPanels.insight}
         onToggle={() => togglePanel("insight")}
       >
-        <p className="timeline-insight-copy">{insights?.summary || "Not enough activity yet to generate insights."}</p>
-        <div className="timeline-insight-grid">
-          <div>
-            <h4>Dominant Topic</h4>
-            <p className="timeline-summary-value">{insights?.dominant_topic || "-"}</p>
+        <div className="timeline-insight-hero">
+          <div className="timeline-insight-hero-copy">
+            <span className="timeline-insight-eyebrow">Monthly Readout</span>
+            <p className="timeline-insight-copy">{insights?.summary || "Not enough activity yet to generate insights."}</p>
           </div>
-          <div>
-            <h4>Emerging Topics</h4>
+          <div className="timeline-insight-highlight-card">
+            <span className="timeline-insight-highlight-label">Dominant Topic</span>
+            <p className="timeline-insight-highlight-topic">{insights?.dominant_topic || "-"}</p>
+            <p className="muted">Most active concept in your recent graph activity.</p>
+          </div>
+        </div>
+
+        <div className="timeline-insight-strip">
+          <div className="timeline-momentum-card highlight">
+            <h4>Fastest Growing</h4>
+            <p className="timeline-summary-value">{insights?.fastest_topic || "-"}</p>
+          </div>
+          <div className="timeline-momentum-card highlight">
+            <h4>Emerging Focus</h4>
+            <p className="timeline-summary-value">{insights?.emerging_topic || "-"}</p>
+          </div>
+          <div className="timeline-momentum-card highlight">
+            <h4>Stable Theme</h4>
+            <p className="timeline-summary-value">{insights?.stable_topic || "-"}</p>
+          </div>
+        </div>
+
+        <div className="timeline-insight-grid refined">
+          <div className="timeline-insight-section-card">
+            <div className="row-between">
+              <h4>Emerging Topics</h4>
+              <span className="tag">{insights?.emerging_topics?.length || 0}</span>
+            </div>
             {insights?.emerging_topics?.length ? (
               <div className="tag-list">
                 {insights.emerging_topics.map((topic) => (
@@ -412,114 +451,117 @@ export default function Timeline() {
               <p className="muted">No emerging topics detected yet.</p>
             )}
           </div>
-        </div>
-        <div className="timeline-momentum-grid">
-          <div className="timeline-momentum-card">
-            <h4>Fastest Growing Topic</h4>
-            <p className="timeline-summary-value">{insights?.fastest_topic || "-"}</p>
+
+          <div className="timeline-insight-section-card">
+            <div className="row-between">
+              <h4>Suggested Exploration</h4>
+              <span className="tag">{insights?.suggested_topics?.length || 0}</span>
+            </div>
+            {insights?.suggested_topics?.length ? (
+              <div className="tag-list">
+                {insights.suggested_topics.map((topic) => (
+                  <Link key={topic} to={`/topics/${encodeURIComponent(topic)}`} className="tag tag-link timeline-exploration-chip">{topic}</Link>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No exploration suggestions yet.</p>
+            )}
           </div>
-          <div className="timeline-momentum-card">
-            <h4>Emerging Topic</h4>
-            <p className="timeline-summary-value">{insights?.emerging_topic || "-"}</p>
+
+          <div className="timeline-insight-section-card">
+            <div className="row-between">
+              <h4>Knowledge Gaps</h4>
+              <span className="tag">{insights?.knowledge_gaps?.length || 0}</span>
+            </div>
+            {insights?.knowledge_gaps?.length ? (
+              <div className="tag-list">
+                {insights.knowledge_gaps.map((topic) => (
+                  <Link key={topic} to={`/topics/${encodeURIComponent(topic)}`} className="tag tag-link">{topic}</Link>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No obvious knowledge gaps detected yet.</p>
+            )}
           </div>
-          <div className="timeline-momentum-card">
-            <h4>Stable Topic</h4>
-            <p className="timeline-summary-value">{insights?.stable_topic || "-"}</p>
+
+          {!!insights?.suggestions?.length ? (
+            <div className="timeline-insight-section-card">
+              <div className="row-between">
+                <h4>Suggestions</h4>
+                <span className="tag">{insights.suggestions.length}</span>
+              </div>
+              <ul className="simple-list timeline-insight-suggestions">
+                {insights.suggestions.map((suggestion) => (
+                  <li key={suggestion}>{suggestion}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="timeline-insight-lower-grid">
+          <div>
+            <h4>Knowledge Strategy</h4>
+            {insights?.strategies?.length ? (
+              <div className="stack compact">
+                {insights.strategies.map((strategy) => (
+                  <div key={strategy.domain} className="timeline-strategy-card refined">
+                    <div className="row-between">
+                      <h5>{strategy.domain} Learning Path</h5>
+                      <span className="tag">{strategy.path.length} steps</span>
+                    </div>
+                    <div className="timeline-strategy-list">
+                      {strategy.path.map((step) => (
+                        <div key={`${strategy.domain}-${step.topic}`} className="timeline-strategy-step">
+                          <span className={`timeline-strategy-marker ${step.completed ? "completed" : "pending"}`} aria-hidden="true" />
+                          <span className={step.completed ? "timeline-strategy-complete" : ""}>{step.topic}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No strategy path available yet.</p>
+            )}
+          </div>
+
+          <div>
+            <h4>Active Knowledge Projects</h4>
+            {insights?.projects?.length ? (
+              <div className="stack compact">
+                {insights.projects.map((project) => (
+                  <div key={project.name} className="timeline-project-card refined">
+                    <div className="row-between">
+                      <h5>{project.name}</h5>
+                      <span className="tag">{Math.round(project.progress * 100)}%</span>
+                    </div>
+                    <div className="timeline-project-progress">
+                      <div
+                        className="timeline-project-progress-bar"
+                        style={{ width: `${Math.max(8, Math.round(project.progress * 100))}%` }}
+                      />
+                    </div>
+                    <div className="tag-list">
+                      {project.topics.map((topic) => (
+                        <Link
+                          key={`${project.name}-${topic}`}
+                          to={`/topics/${encodeURIComponent(topic)}`}
+                          className="tag tag-link"
+                        >
+                          {topic}
+                        </Link>
+                      ))}
+                    </div>
+                    <p className="source-meta">Next suggested step: {project.next_step || "Project is well covered"}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No active knowledge projects detected yet.</p>
+            )}
           </div>
         </div>
-        <div>
-          <h4>Suggested Exploration</h4>
-          {insights?.suggested_topics?.length ? (
-            <div className="tag-list">
-              {insights.suggested_topics.map((topic) => (
-                <Link key={topic} to={`/topics/${encodeURIComponent(topic)}`} className="pill-button tag-link">{topic}</Link>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">No exploration suggestions yet.</p>
-          )}
-        </div>
-        <div>
-          <h4>Knowledge Gaps</h4>
-          {insights?.knowledge_gaps?.length ? (
-            <div className="tag-list">
-              {insights.knowledge_gaps.map((topic) => (
-                <Link key={topic} to={`/topics/${encodeURIComponent(topic)}`} className="tag tag-link">{topic}</Link>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">No obvious knowledge gaps detected yet.</p>
-          )}
-        </div>
-        <div>
-          <h4>Knowledge Strategy</h4>
-          {insights?.strategies?.length ? (
-            <div className="stack compact">
-              {insights.strategies.map((strategy) => (
-                <div key={strategy.domain} className="timeline-strategy-card">
-                  <h5>{strategy.domain} Learning Path</h5>
-                  <div className="timeline-strategy-list">
-                    {strategy.path.map((step) => (
-                      <div key={`${strategy.domain}-${step.topic}`} className="timeline-strategy-step">
-                        <span className={`timeline-strategy-marker ${step.completed ? "completed" : ""}`}>
-                          {step.completed ? "✓" : "→"}
-                        </span>
-                        <span className={step.completed ? "timeline-strategy-complete" : ""}>{step.topic}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">No strategy path available yet.</p>
-          )}
-        </div>
-        <div>
-          <h4>Active Knowledge Projects</h4>
-          {insights?.projects?.length ? (
-            <div className="stack compact">
-              {insights.projects.map((project) => (
-                <div key={project.name} className="timeline-project-card">
-                  <div className="row-between">
-                    <h5>{project.name}</h5>
-                    <span className="tag">{Math.round(project.progress * 100)}%</span>
-                  </div>
-                  <div className="timeline-project-progress">
-                    <div
-                      className="timeline-project-progress-bar"
-                      style={{ width: `${Math.max(8, Math.round(project.progress * 100))}%` }}
-                    />
-                  </div>
-                  <div className="tag-list">
-                    {project.topics.map((topic) => (
-                      <Link
-                        key={`${project.name}-${topic}`}
-                        to={`/topics/${encodeURIComponent(topic)}`}
-                        className="tag tag-link"
-                      >
-                        {topic}
-                      </Link>
-                    ))}
-                  </div>
-                  <p className="source-meta">Next suggested step: {project.next_step || "Project is well covered"}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">No active knowledge projects detected yet.</p>
-          )}
-        </div>
-        {!!insights?.suggestions?.length && (
-          <>
-            <h4>Suggestions</h4>
-            <ul className="simple-list">
-              {insights.suggestions.map((suggestion) => (
-                <li key={suggestion}>{suggestion}</li>
-              ))}
-            </ul>
-          </>
-        )}
       </TimelinePanel>
 
       <TimelinePanel
