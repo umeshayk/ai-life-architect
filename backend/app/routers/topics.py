@@ -21,6 +21,7 @@ from app.schemas.topic import (
     TopicDetailResponse,
     TopicExpansionResponse,
     TopicItemsResponse,
+    TopicMasteryResponse,
     TopicNoteSummary,
     TopicRebuildResponse,
     TopicSearchResult,
@@ -35,6 +36,7 @@ from app.services.retrieval import _extract_item_concepts
 from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
 from app.services.relationship_service import get_relationship_detail
 from app.services.topic_summary_service import get_topic_summary
+from app.services.mastery_service import get_topic_mastery
 
 
 router = APIRouter(tags=["topics"])
@@ -173,6 +175,16 @@ def get_topic_summary_endpoint(topic_id: int, refresh: bool = Query(False), db: 
 def get_relationship_details(relationship_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
         return RelationshipDetailResponse(**get_relationship_detail(db, current_user.id, relationship_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+
+
+@router.get("/api/topics/{topic_id}/mastery", response_model=TopicMasteryResponse)
+def get_topic_mastery_endpoint(topic_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        return TopicMasteryResponse(**get_topic_mastery(db, current_user.id, topic_id, track_view=True))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

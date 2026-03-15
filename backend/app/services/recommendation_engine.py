@@ -11,6 +11,7 @@ from app.services.graph_service import _topic_group
 from app.services.knowledge_expansion_service import suggest_missing_topics
 from app.services.knowledge_gap_analyzer import analyze_knowledge_gaps
 from app.services.learning_path_service import build_learning_paths
+from app.services.mastery_service import get_mastery_lookup
 from app.services.topic_normalizer_service import canonical_topic_key
 from app.services.topic_service import get_raw_topics_with_counts
 
@@ -241,19 +242,22 @@ def _collect_expansion_signals(candidate_map: dict[str, dict], db: Session, user
             candidate["reasons"].append(bridge_reason)
 
 
-def _finalize_candidates(candidate_map: dict[str, dict], existing_topics: dict[str, dict], domain: str = "") -> list[dict]:
+def _finalize_candidates(candidate_map: dict[str, dict], existing_topics: dict[str, dict], mastery_lookup: dict[str, float], domain: str = "") -> list[dict]:
     normalized_domain = canonical_topic_key(domain)
     results: list[dict] = []
     for key, candidate in candidate_map.items():
         existing = existing_topics.get(key)
-        if existing and existing.get("count", 0) >= 3:
+        mastery_score = mastery_lookup.get(key, 0.0)
+        if mastery_score >= 0.82:
+            continue
+        if existing and existing.get("count", 0) >= 3 and mastery_score >= 0.6:
             continue
 
         action = "focus" if existing else "add"
         if candidate.get("started"):
             action = "focus"
 
-        score = candidate["score"] + (STARTED_TOPIC_BONUS if action == "focus" else 0.0)
+        score = candidate["score"] + (STARTED_TOPIC_BONUS if action == "focus" else 0.0) - (mastery_score * 3.0)
         topic_domain = candidate.get("domain") or existing.get("domain") if existing else candidate.get("domain")
         topic_domain = topic_domain or _topic_group(candidate["topic"])
         if normalized_domain and canonical_topic_key(topic_domain) != normalized_domain:
@@ -279,6 +283,7 @@ def _finalize_candidates(candidate_map: dict[str, dict], existing_topics: dict[s
                 "domain": topic_domain,
                 "action": action,
                 "path_name": candidate.get("path_name"),
+                "mastery_score": round(mastery_score, 2),
             }
         )
 
@@ -294,6 +299,7 @@ def recommend_next_topics(db: Session, user_id: int, limit: int = 3, domain: str
 
     learning_paths = build_learning_paths(db, user_id)
     gaps = analyze_knowledge_gaps(db, user_id, refresh=False, domain=domain)
+    mastery_lookup = get_mastery_lookup(db, user_id)
     candidate_map: dict[str, dict] = {}
 
     _collect_learning_path_signals(candidate_map, learning_paths, domain=domain)
@@ -301,7 +307,7 @@ def recommend_next_topics(db: Session, user_id: int, limit: int = 3, domain: str
     _collect_focused_topic_signals(candidate_map, db, user_id, learning_paths, focused_topic=topic, domain=domain)
     _collect_expansion_signals(candidate_map, db, user_id, learning_paths, domain=domain)
 
-    recommendations = _finalize_candidates(candidate_map, existing_topics, domain=domain)
+    recommendations = _finalize_candidates(candidate_map, existing_topics, mastery_lookup, domain=domain)
     payload = {"recommendations": recommendations[: max(limit, 3)]}
     save_cached_payload(db, cache_key, domain or "recommendations", payload)
     return payload["recommendations"][:limit]

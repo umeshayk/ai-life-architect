@@ -171,3 +171,11 @@ class RecommendationItem(BaseModel):
 
 class RecommendationListResponse(BaseModel):
     recommendations: list[RecommendationItem] = []
+
+
+class TopicMasteryResponse(BaseModel):
+    topic: str
+    topic_id: int
+    mastery_score: float
+    signals: dict = {}
+    last_updated: datetime | None = None

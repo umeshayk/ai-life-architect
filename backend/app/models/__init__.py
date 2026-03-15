@@ -6,6 +6,7 @@ from app.models.knowledge_gap_cache import KnowledgeGapCache
 from app.models.profile import UserProfile
 from app.models.topic import Topic
 from app.models.topic_expansion_cache import TopicExpansionCache
+from app.models.topic_mastery import TopicMastery
 from app.models.topic_summary import TopicSummary
 from app.models.user import User
 
@@ -17,6 +18,7 @@ __all__ = [
     "KnowledgeItem",
     "Topic",
     "TopicExpansionCache",
+    "TopicMastery",
     "TopicSummary",
     "UserProfile",
     "User",

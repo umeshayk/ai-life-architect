@@ -541,6 +541,9 @@ export default function BrainMap() {
   const [addingGapTopic, setAddingGapTopic] = useState("");
   const [refreshingExpansion, setRefreshingExpansion] = useState(false);
   const [topicSummary, setTopicSummary] = useState(null);
+  const [topicMastery, setTopicMastery] = useState(null);
+  const [topicMasteryError, setTopicMasteryError] = useState("");
+  const [topicMasteryLoading, setTopicMasteryLoading] = useState(false);
   const [topicSummaryError, setTopicSummaryError] = useState("");
   const [topicSummaryLoading, setTopicSummaryLoading] = useState(false);
   const [refreshingTopicSummary, setRefreshingTopicSummary] = useState(false);
@@ -554,6 +557,33 @@ export default function BrainMap() {
     mentor: false,
     details: false
   });
+
+  const loadTopicMastery = async (topicLabel) => {
+    if (!topicLabel) {
+      setTopicMastery(null);
+      setTopicMasteryError("");
+      return;
+    }
+    setTopicMasteryLoading(true);
+    setTopicMasteryError("");
+    try {
+      const searchResponse = await api.get("/api/topics/search", { params: { q: topicLabel } });
+      const matches = searchResponse.data || [];
+      const exact = matches.find((item) => item.name?.toLowerCase() === topicLabel.toLowerCase()) || matches[0];
+      if (!exact?.id) {
+        setTopicMastery(null);
+        setTopicMasteryError("Mastery is only available for saved topics.");
+        return;
+      }
+      const masteryResponse = await api.get(`/api/topics/${exact.id}/mastery`);
+      setTopicMastery(masteryResponse.data || null);
+    } catch (err) {
+      setTopicMastery(null);
+      setTopicMasteryError(err?.response?.data?.detail || "Unable to load mastery right now.");
+    } finally {
+      setTopicMasteryLoading(false);
+    }
+  };
 
   const loadRecommendations = async ({ domain = currentDomain, topic = "" } = {}) => {
     setRecommendationsLoading(true);
@@ -659,28 +689,15 @@ export default function BrainMap() {
     }
 
     const preferredLabel = currentTopic || graph.topic || "";
-    if (preferredLabel) {
-      const matchingNode = graph.nodes.find((node) => node.label === preferredLabel);
-      if (matchingNode) {
-        setSelectedNodeId(matchingNode.id);
-        return;
-      }
-    }
-
-    if ((graph.level || currentLevel) === 1) {
+    if (!preferredLabel) {
       return;
     }
 
-    if (currentDomain || graph.domain) {
-      const domainGroup = currentDomain || graph.domain;
-      const leadNode = [...graph.nodes]
-        .filter((node) => node.group === domainGroup || node.label === domainGroup)
-        .sort((left, right) => (right.importance || 0) - (left.importance || 0))[0];
-      if (leadNode) {
-        setSelectedNodeId(leadNode.id);
-      }
+    const matchingNode = graph.nodes.find((node) => node.label === preferredLabel);
+    if (matchingNode) {
+      setSelectedNodeId(matchingNode.id);
     }
-  }, [currentDomain, currentLevel, currentTopic, graph, selectedNodeId]);
+  }, [currentTopic, graph.topic, graph.nodes, selectedNodeId]);
 
 
   const graphWithDegree = useMemo(() => {
@@ -880,6 +897,16 @@ export default function BrainMap() {
       return;
     }
     loadTopicSummary(selectedNode.label);
+  }, [selectedNode?.id, selectedNode?.label, selectedNode?.type]);
+
+  useEffect(() => {
+    if (selectedNode?.type !== "topic") {
+      setTopicMastery(null);
+      setTopicMasteryError("");
+      setTopicMasteryLoading(false);
+      return;
+    }
+    loadTopicMastery(selectedNode.label);
   }, [selectedNode?.id, selectedNode?.label, selectedNode?.type]);
   const availableGroups = useMemo(() => {
     const groups = new Set(filteredData.nodes.map((node) => node.group));
@@ -1894,6 +1921,25 @@ export default function BrainMap() {
                             {refreshingTopicSummary ? "Refreshing..." : "Refresh Summary"}
                           </button>
                         </div>
+                        {topicMasteryLoading ? <p className="muted">Loading mastery...</p> : null}
+                        {topicMasteryError ? <p className="error-text">{topicMasteryError}</p> : null}
+                        {topicMastery ? (
+                          <div className="stack compact mastery-card">
+                            <div className="row-between">
+                              <p className="source-meta">Mastery</p>
+                              <strong>{Math.round((topicMastery.mastery_score || 0) * 100)}%</strong>
+                            </div>
+                            <div className="mastery-progress">
+                              <div className="mastery-progress-fill" style={{ width: `${Math.round((topicMastery.mastery_score || 0) * 100)}%` }} />
+                            </div>
+                            <div className="tag-list">
+                              <span className="tag">Views {topicMastery.signals?.topic_views || 0}</span>
+                              <span className="tag">Notes {topicMastery.signals?.linked_notes || 0}</span>
+                              <span className="tag">Related {topicMastery.signals?.related_topics_explored || 0}</span>
+                              <span className="tag">Mentor {topicMastery.signals?.mentor_interactions || 0}</span>
+                            </div>
+                          </div>
+                        ) : null}
                         {topicSummaryLoading ? <p className="muted">Loading topic summary...</p> : null}
                         {topicSummaryError ? <p className="error-text">{topicSummaryError}</p> : null}
                         {topicSummary ? (

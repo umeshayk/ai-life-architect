@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.services.learning_path_service import LEARNING_PATHS, build_learning_paths
+from app.services.mastery_service import record_mentor_interaction
 
 
 TOPIC_EXPLANATIONS = {
@@ -255,6 +256,8 @@ def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
     question_type = _classify_question(question)
     resolved_path = _resolve_path(question, learning_paths)
     resolved_topic = _resolve_topic(question)
+    if resolved_topic:
+        record_mentor_interaction(db, user_id, resolved_topic.get("topic"))
 
     if question_type == "focus_path":
         target_path = next((path for path in learning_paths if path.get("next_topic")), learning_paths[0] if learning_paths else None)
@@ -361,6 +364,7 @@ def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
         }
 
     topic_name = next_topic["topic"]
+    record_mentor_interaction(db, user_id, topic_name)
     unlocked = _skills_unlocked(topic_name, target_path["path_name"])
     return _build_response(
         answer=f"Your next best topic in {target_path['domain']} is {topic_name} because it is the next step in {target_path['path_name']} and it unlocks {', '.join(unlocked) or 'the next stage of your roadmap'}.",
