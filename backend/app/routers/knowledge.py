@@ -16,6 +16,7 @@ from app.schemas.knowledge import (
     SearchRequest,
 )
 from app.services.connection_service import rebuild_connections_for_user
+from app.services.graph_state_service import bump_user_graph_version
 from app.services.retrieval import find_related_knowledge_by_topics, semantic_search
 from app.services.upload_ingestion_service import create_ingested_knowledge_item, update_ingested_knowledge_item
 
@@ -52,11 +53,7 @@ def serialize_knowledge(item: KnowledgeItem, ingestion_summary: dict | None = No
 
 
 @router.post("", response_model=KnowledgeResponse, status_code=status.HTTP_201_CREATED)
-def create_knowledge(
-    payload: KnowledgeCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def create_knowledge(payload: KnowledgeCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     item, ingestion_summary = create_ingested_knowledge_item(
         db,
         user_id=current_user.id,
@@ -85,15 +82,8 @@ def list_knowledge(db: Session = Depends(get_db), current_user: User = Depends(g
 
 
 @router.put("/{item_id}", response_model=KnowledgeResponse)
-def update_knowledge(
-    item_id: int,
-    payload: KnowledgeUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    item = db.scalar(
-        select(KnowledgeItem).where(KnowledgeItem.id == item_id, KnowledgeItem.user_id == current_user.id)
-    )
+def update_knowledge(item_id: int, payload: KnowledgeUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.scalar(select(KnowledgeItem).where(KnowledgeItem.id == item_id, KnowledgeItem.user_id == current_user.id))
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge item not found")
 
@@ -121,27 +111,19 @@ def update_knowledge(
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_knowledge(
-    item_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    item = db.scalar(
-        select(KnowledgeItem).where(KnowledgeItem.id == item_id, KnowledgeItem.user_id == current_user.id)
-    )
+def delete_knowledge(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.scalar(select(KnowledgeItem).where(KnowledgeItem.id == item_id, KnowledgeItem.user_id == current_user.id))
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge item not found")
     db.delete(item)
     db.commit()
     rebuild_connections_for_user(db, current_user.id)
+    bump_user_graph_version(db, current_user.id, reason="delete_knowledge")
+    db.commit()
 
 
 @router.post("/search", response_model=list[KnowledgeResponse])
-def search_knowledge(
-    payload: SearchRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def search_knowledge(payload: SearchRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     items = semantic_search(db, current_user.id, payload.query, payload.limit)
     loaded_items = db.scalars(
         select(KnowledgeItem)
@@ -156,11 +138,7 @@ def search_knowledge(
 
 
 @api_router.get("/{item_id}/related", response_model=RelatedKnowledgeResponse)
-def get_related_knowledge(
-    item_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def get_related_knowledge(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     related = find_related_knowledge_by_topics(db, current_user.id, item_id)
     if related is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge item not found")

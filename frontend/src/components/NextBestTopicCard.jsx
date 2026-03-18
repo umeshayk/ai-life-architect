@@ -1,7 +1,41 @@
+function sourceBadgeLabel(source, cached) {
+  if (cached || source === "cache") {
+    return "Cached";
+  }
+  if (source === "hybrid") {
+    return "Hybrid";
+  }
+  if (source === "ai") {
+    return "AI Generated";
+  }
+  if (source === "fallback") {
+    return "Fallback";
+  }
+  return "Rule Based";
+}
+
+function sourceBadgeClass(source, cached) {
+  if (cached || source === "cache") {
+    return "cache";
+  }
+  if (source === "hybrid") {
+    return "hybrid";
+  }
+  if (source === "ai") {
+    return "ai";
+  }
+  if (source === "fallback") {
+    return "fallback";
+  }
+  return "rules";
+}
+
 export default function NextBestTopicCard({
   recommendations,
   loading,
   error,
+  source = "rules",
+  cached = false,
   onTopicClick,
   onTopicAction,
   collapsed = false,
@@ -38,7 +72,11 @@ export default function NextBestTopicCard({
       {!collapsed && (
         <>
           <div className="row-between next-best-topic-header">
-            <div />
+            <div>
+              <span className={`knowledge-expansion-source ${sourceBadgeClass(source, cached)}`}>
+                {sourceBadgeLabel(source, cached)}
+              </span>
+            </div>
             {topRecommendation?.domain ? <span className="tag">{topRecommendation.domain}</span> : null}
           </div>
 

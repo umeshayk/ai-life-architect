@@ -37,6 +37,38 @@ function renderMentorStateIcon(state) {
   return <span className={`mentor-path-state-icon ${state}`} aria-hidden="true" />;
 }
 
+function sourceBadgeLabel(source, cached) {
+  if (cached || source === "cache") {
+    return "Cached";
+  }
+  if (source === "hybrid") {
+    return "Hybrid";
+  }
+  if (source === "ai") {
+    return "AI Generated";
+  }
+  if (source === "fallback") {
+    return "Fallback";
+  }
+  return "Rule Based";
+}
+
+function sourceBadgeClass(source, cached) {
+  if (cached || source === "cache") {
+    return "cache";
+  }
+  if (source === "hybrid") {
+    return "hybrid";
+  }
+  if (source === "ai") {
+    return "ai";
+  }
+  if (source === "fallback") {
+    return "fallback";
+  }
+  return "rules";
+}
+
 export default function AIMentorPanel({ onTopicClick, onTopicAction, collapsed = false, onToggle = null }) {
   const [question, setQuestion] = useState(QUICK_QUESTIONS[0]);
   const [response, setResponse] = useState(null);
@@ -50,7 +82,7 @@ export default function AIMentorPanel({ onTopicClick, onTopicAction, collapsed =
   );
   const followUpQuestions = buildFollowUpQuestions(response, question);
 
-  const askMentor = async (nextQuestion = question) => {
+  const askMentor = async (nextQuestion = question, refresh = false) => {
     const trimmed = nextQuestion.trim();
     if (!trimmed) {
       return;
@@ -60,7 +92,7 @@ export default function AIMentorPanel({ onTopicClick, onTopicAction, collapsed =
     setIsLoading(true);
     setError("");
     try {
-      const result = await api.post("/api/mentor/ask", { question: trimmed });
+      const result = await api.post("/api/mentor/ask", { question: trimmed, refresh });
       setResponse(result.data);
     } catch (err) {
       setError(err.response?.data?.detail || "Unable to reach the mentor right now.");
@@ -116,8 +148,13 @@ export default function AIMentorPanel({ onTopicClick, onTopicAction, collapsed =
 
           {response && (
             <article className="result-item mentor-response-card">
-              <div className="mentor-section first">
+              <div className="row-between">
                 <p className="source-meta">Answer</p>
+                <span className={`knowledge-expansion-source ${sourceBadgeClass(response.source, response.cached)}`}>
+                  {sourceBadgeLabel(response.source, response.cached)}
+                </span>
+              </div>
+              <div className="mentor-section first">
                 <p className="mentor-answer">{response.answer}</p>
               </div>
 
@@ -215,6 +252,14 @@ export default function AIMentorPanel({ onTopicClick, onTopicAction, collapsed =
                     >
                       <span className={`suggestion-action-icon ${response.recommended_action === "focus" ? "focus" : "add"}`} aria-hidden="true" />
                       <span>{response.recommended_action === "focus" ? "Focus Topic" : "Add Topic"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => askMentor(question, true)}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? "Refreshing..." : "Refresh AI"}
                     </button>
                   </div>
                 </div>

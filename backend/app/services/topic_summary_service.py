@@ -10,15 +10,17 @@ from sqlalchemy.orm import Session
 from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.models.topic import Topic
-from app.models.topic_summary import TopicSummary
+from app.services.ai_insight_store import build_context_hash, get_ai_insight, save_ai_insight
 from app.services.graph_service import _topic_group
+from app.services.graph_state_service import get_user_graph_version
 from app.services.learning_path_service import build_learning_paths
 from app.services.ollama_service import generate_text
 from app.services.topic_normalizer_service import canonical_topic_key
 
 
 logger = logging.getLogger(__name__)
-SUMMARY_PROMPT_VERSION = "v2"
+FEATURE_TYPE = "topic_summary"
+SUMMARY_PROMPT_VERSION = "v3"
 GENERIC_SUMMARY_PHRASES = {
     "for ai",
     "important topic",
@@ -70,10 +72,19 @@ def _path_membership(db: Session, user_id: int, topic_name: str) -> tuple[list[s
     return memberships, skills_unlocked
 
 
-def _graph_version(items: list[KnowledgeItem], related_topics: list[str], memberships: list[str]) -> str:
-    latest_updated = max((item.updated_at.isoformat() for item in items if item.updated_at), default="none")
-    membership_key = ",".join(sorted(memberships)) or "none"
-    return f"{SUMMARY_PROMPT_VERSION}:{len(items)}:{len(related_topics)}:{latest_updated}:{membership_key}"
+def _context_hash(topic: Topic, items: list[KnowledgeItem], related_topics: list[str], memberships: list[str], skills_unlocked: list[str]) -> str:
+    return build_context_hash(
+        {
+            "version": SUMMARY_PROMPT_VERSION,
+            "topic": topic.name,
+            "domain": _topic_group(topic.name),
+            "item_titles": [item.title for item in items[:6]],
+            "item_times": [item.updated_at.isoformat() for item in items[:6] if item.updated_at],
+            "related_topics": related_topics[:6],
+            "memberships": memberships,
+            "skills_unlocked": skills_unlocked[:4],
+        }
+    )
 
 
 def _fallback_summary(topic: Topic, related_topics: list[str], memberships: list[str], skills_unlocked: list[str]) -> tuple[str, str, list[str], str]:
@@ -166,20 +177,15 @@ def get_topic_summary(db: Session, user_id: int, topic_id: int, refresh: bool = 
     items = _linked_items(db, user_id, topic.id)
     related_topics = _related_topics(db, user_id, topic.id, items)
     memberships, skills_unlocked = _path_membership(db, user_id, topic.name)
-    graph_version = _graph_version(items, related_topics, memberships)
+    graph_version = get_user_graph_version(db, user_id)
+    context_hash = _context_hash(topic, items, related_topics, memberships, skills_unlocked)
 
-    existing = db.scalar(select(TopicSummary).where(TopicSummary.topic_id == topic.id))
-    if existing is not None and not refresh and existing.graph_version == graph_version:
-        return {
-            "topic": topic.name,
-            "summary": existing.summary_text,
-            "why_it_matters": existing.why_it_matters,
-            "skills_unlocked": json.loads(existing.skills_unlocked_json or "[]"),
-            "source": existing.source,
-        }
+    if not refresh:
+        cached = get_ai_insight(db, user_id, topic.name, FEATURE_TYPE, context_hash, graph_version)
+        if cached:
+            return cached
 
     summary_text, why_it_matters, final_skills, source = _fallback_summary(topic, related_topics, memberships, skills_unlocked)
-
     should_use_ai = bool(items or related_topics or memberships)
     if should_use_ai:
         try:
@@ -191,30 +197,22 @@ def get_topic_summary(db: Session, user_id: int, topic_id: int, refresh: bool = 
                 source = "ai"
         except Exception as exc:  # noqa: BLE001
             logger.warning("Topic summary AI fallback for %s: %s", topic.name, exc)
+            source = "fallback" if source != "ai" else source
 
-    if existing is None:
-        existing = TopicSummary(
-            topic_id=topic.id,
-            summary_text=summary_text,
-            why_it_matters=why_it_matters,
-            skills_unlocked_json=json.dumps(final_skills),
-            source=source,
-            graph_version=graph_version,
-        )
-        db.add(existing)
-    else:
-        existing.summary_text = summary_text
-        existing.why_it_matters = why_it_matters
-        existing.skills_unlocked_json = json.dumps(final_skills)
-        existing.source = source
-        existing.graph_version = graph_version
-    db.commit()
-
-    return {
+    payload = {
         "topic": topic.name,
         "summary": summary_text,
         "why_it_matters": why_it_matters,
         "skills_unlocked": final_skills,
-        "source": source,
     }
-
+    return save_ai_insight(
+        db,
+        user_id=user_id,
+        topic_name=topic.name,
+        feature_type=FEATURE_TYPE,
+        context_hash=context_hash,
+        graph_version=graph_version,
+        source=source,
+        payload=payload,
+        ttl_hours=168,
+    )

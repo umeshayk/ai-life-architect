@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.models.topic import Topic
+from app.services.graph_state_service import bump_user_graph_version
 from app.services.topic_discovery_service import assign_topics_for_item as assign_topics_directly_for_item
 from app.services.topic_discovery_service import discover_topics_for_user, preview_topic_discovery_for_item, reassign_topics_for_user
 from app.services.topic_normalizer_service import merge_similar_topics
-from app.services.timeline_event_service import build_topic_path_events, log_knowledge_event
 
 
 def assign_topics_to_item(db: Session, item: KnowledgeItem, source_method: str = "discovery") -> tuple[int, int]:
@@ -22,19 +22,32 @@ def preview_topics_for_item(item: KnowledgeItem) -> dict[str, list[str]]:
 
 
 def rebuild_topics_for_user(db: Session, user_id: int) -> tuple[int, int, int]:
-    return discover_topics_for_user(db, user_id, reset_topics=True)
+    processed_items, topics_created, links_created = discover_topics_for_user(db, user_id, reset_topics=True)
+    bump_user_graph_version(db, user_id, reason="rebuild_topics")
+    db.commit()
+    return processed_items, topics_created, links_created
 
 
 def discover_topics(db: Session, user_id: int) -> tuple[int, int, int]:
-    return discover_topics_for_user(db, user_id, reset_topics=True)
+    processed_items, topics_created, links_created = discover_topics_for_user(db, user_id, reset_topics=True)
+    bump_user_graph_version(db, user_id, reason="discover_topics")
+    db.commit()
+    return processed_items, topics_created, links_created
 
 
 def reassign_topics(db: Session, user_id: int) -> tuple[int, int, int]:
-    return reassign_topics_for_user(db, user_id)
+    processed_items, topics_created, links_created = reassign_topics_for_user(db, user_id)
+    bump_user_graph_version(db, user_id, reason="reassign_topics")
+    db.commit()
+    return processed_items, topics_created, links_created
 
 
 def cleanup_topics(db: Session, user_id: int) -> int:
-    return merge_similar_topics(db, user_id)
+    merged_topics = merge_similar_topics(db, user_id)
+    if merged_topics:
+        bump_user_graph_version(db, user_id, reason="cleanup_topics")
+        db.commit()
+    return merged_topics
 
 
 def get_topics_with_counts(db: Session, user_id: int) -> list[tuple[Topic, int]]:
@@ -53,7 +66,6 @@ def select_stable_topics_with_counts(rows: list[tuple[Topic, int]]) -> list[tupl
     filtered = [(topic, count) for topic, count in rows if count >= 2]
     if filtered:
         return sorted(filtered, key=lambda row: (-row[1], row[0].name.lower()))
-
     fallback = [(topic, count) for topic, count in rows if count > 0]
     return sorted(fallback, key=lambda row: (-row[1], row[0].name.lower()))
 

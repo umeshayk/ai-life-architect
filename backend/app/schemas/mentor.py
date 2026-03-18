@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class MentorAskRequest(BaseModel):
     question: str
+    refresh: bool = False
 
 
 class MentorPathProgress(BaseModel):
@@ -27,3 +28,8 @@ class MentorAskResponse(BaseModel):
     skills_unlocked: list[str] = []
     missing_topics: list[str] = []
     path_topics: list[MentorPathTopic] = []
+    source: str = "rules"
+    stored_source: str | None = None
+    cached: bool = False
+    feature_type: str = "mentor_explanation"
+    graph_version: int | None = None

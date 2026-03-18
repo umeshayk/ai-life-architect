@@ -15,12 +15,18 @@ def get_next_topic_recommendations(
     limit: int = Query(3, ge=1, le=10),
     domain: str = Query(""),
     topic: str = Query(""),
+    refresh: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    recommendations = recommend_next_topics(db, current_user.id, limit=limit, domain=domain, topic=topic)
+    payload = recommend_next_topics(db, current_user.id, limit=limit, domain=domain, topic=topic, refresh=refresh)
     return RecommendationListResponse(
-        recommendations=[RecommendationItem(**item) for item in recommendations]
+        recommendations=[RecommendationItem(**item) for item in payload.get("recommendations", [])],
+        source=payload.get("source", "rules"),
+        stored_source=payload.get("stored_source"),
+        cached=payload.get("cached", False),
+        feature_type=payload.get("feature_type", "recommendation_reason"),
+        graph_version=payload.get("graph_version"),
     )
 
 
@@ -28,8 +34,9 @@ def get_next_topic_recommendations(
 def get_next_topic_recommendation(
     domain: str = Query(""),
     topic: str = Query(""),
+    refresh: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    recommendation = recommend_next_topic(db, current_user.id, domain=domain, topic=topic)
+    recommendation = recommend_next_topic(db, current_user.id, domain=domain, topic=topic, refresh=refresh)
     return RecommendationItem(**recommendation) if recommendation else None

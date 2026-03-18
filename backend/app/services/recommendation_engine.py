@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.topic import Topic
-from app.services.cache_service import load_cached_payload, save_cached_payload
+from app.services.ai_insight_store import build_context_hash, get_ai_insight, save_ai_insight
+from app.services.domain_bridge_engine import discover_domain_bridges
 from app.services.graph_service import _topic_group
+from app.services.graph_state_service import get_user_graph_version
 from app.services.knowledge_expansion_service import suggest_missing_topics
 from app.services.knowledge_gap_analyzer import analyze_knowledge_gaps
 from app.services.learning_path_service import build_learning_paths
@@ -22,16 +22,9 @@ EXPANSION_WEIGHT = 2.0
 BRIDGE_WEIGHT = 2.0
 STARTED_TOPIC_BONUS = 0.8
 MAX_EXPANSION_ANCHORS = 4
-CACHE_TTL_HOURS = 24
 FOCUSED_TOPIC_WEIGHT = 4.0
 FOCUSED_NEIGHBOR_WEIGHT = 2.5
-
-
-
-def _cache_key(user_id: int, topic_count: int, domain: str = "", topic: str = "") -> str:
-    normalized_domain = canonical_topic_key(domain) or "all"
-    normalized_topic = canonical_topic_key(topic) or "global"
-    return f"recommendations:{user_id}:{normalized_domain}:{normalized_topic}:{max(1, topic_count)}"
+FEATURE_TYPE = "recommendation_reason"
 
 
 def _existing_topics(db: Session, user_id: int) -> tuple[dict[str, dict], int]:
@@ -144,13 +137,12 @@ def _collect_gap_signals(candidate_map: dict[str, dict], gaps: list[dict]) -> No
                 exists=started,
             )
 
+
 def _collect_focused_topic_signals(candidate_map: dict[str, dict], db: Session, user_id: int, learning_paths: list[dict], focused_topic: str = "", domain: str = "") -> None:
     focused_key = canonical_topic_key(focused_topic)
     if not focused_key:
         return
-
     normalized_domain = canonical_topic_key(domain)
-
     for path in learning_paths:
         if normalized_domain and canonical_topic_key(path.get("domain", "")) != normalized_domain:
             continue
@@ -158,7 +150,6 @@ def _collect_focused_topic_signals(candidate_map: dict[str, dict], db: Session, 
         index = _path_topic_index(path, focused_topic)
         if index < 0:
             continue
-
         for next_topic in topics[index + 1:index + 3]:
             if next_topic.get("state") == "covered":
                 continue
@@ -229,6 +220,17 @@ def _collect_expansion_signals(candidate_map: dict[str, dict], db: Session, user
             )
             bridge_domains[canonical_topic_key(suggestion)].add(topic_domain)
 
+    bridges_payload = discover_domain_bridges(db, user_id, limit=4, domain=domain, topic="")
+    for bridge in bridges_payload.get("bridges", []):
+        _add_signal(
+            candidate_map,
+            bridge["topic"],
+            score=BRIDGE_WEIGHT,
+            signal="bridge",
+            reason=bridge.get("reason") or "This topic helps connect important areas of your graph.",
+            domain=bridge.get("domains", [domain or _topic_group(bridge["topic"])])[0] if bridge.get("domains") else (domain or _topic_group(bridge["topic"])),
+        )
+
     for candidate_key, domains in bridge_domains.items():
         if len(domains) < 2:
             continue
@@ -286,22 +288,56 @@ def _finalize_candidates(candidate_map: dict[str, dict], existing_topics: dict[s
                 "mastery_score": round(mastery_score, 2),
             }
         )
-
     return sorted(results, key=lambda item: (-item["score"], -item["confidence"], item["topic"]))
 
 
-def recommend_next_topics(db: Session, user_id: int, limit: int = 3, domain: str = "", topic: str = "") -> list[dict]:
-    existing_topics, topic_count = _existing_topics(db, user_id)
-    cache_key = _cache_key(user_id, topic_count, domain, topic)
-    cached = load_cached_payload(db, cache_key, ttl_hours=CACHE_TTL_HOURS)
-    if cached and isinstance(cached.get("recommendations"), list):
-        return cached["recommendations"][:limit]
+def _recommendation_context_hash(existing_topics: dict[str, dict], learning_paths: list[dict], gaps: list[dict], mastery_lookup: dict[str, float], domain: str, topic: str) -> str:
+    return build_context_hash(
+        {
+            "domain": domain,
+            "topic": topic,
+            "existing_topics": sorted(existing_topics.keys())[:30],
+            "learning_paths": [
+                {
+                    "path_name": path.get("path_name"),
+                    "domain": path.get("domain"),
+                    "progress_percent": path.get("progress_percent"),
+                    "covered_count": path.get("covered_count"),
+                    "total_count": path.get("total_count"),
+                    "next_topic": (path.get("next_topic") or {}).get("topic"),
+                }
+                for path in learning_paths
+            ],
+            "gaps": [
+                {
+                    "path_name": path.get("path_name"),
+                    "domain": path.get("domain"),
+                    "missing_topics": [item.get("topic") for item in path.get("missing_topics", [])[:6]],
+                }
+                for path in gaps
+            ],
+            "mastery_keys": sorted(key for key, score in mastery_lookup.items() if score >= 0.5)[:20],
+            "version": "v2",
+        }
+    )
 
+
+def recommend_next_topics(db: Session, user_id: int, limit: int = 3, domain: str = "", topic: str = "", refresh: bool = False) -> dict:
+    existing_topics, _topic_count = _existing_topics(db, user_id)
     learning_paths = build_learning_paths(db, user_id)
     gaps = analyze_knowledge_gaps(db, user_id, refresh=False, domain=domain)
     mastery_lookup = get_mastery_lookup(db, user_id)
-    candidate_map: dict[str, dict] = {}
+    graph_version = get_user_graph_version(db, user_id)
+    context_hash = _recommendation_context_hash(existing_topics, learning_paths, gaps, mastery_lookup, domain, topic)
+    topic_scope = topic or domain or "global"
 
+    if not refresh:
+        cached = get_ai_insight(db, user_id, topic_scope, FEATURE_TYPE, context_hash, graph_version)
+        if cached and isinstance(cached.get("recommendations"), list):
+            cached["recommendations"] = cached["recommendations"][:limit]
+            return cached
+
+    candidate_map: dict[str, dict] = {}
     _collect_learning_path_signals(candidate_map, learning_paths, domain=domain)
     _collect_gap_signals(candidate_map, gaps)
     _collect_focused_topic_signals(candidate_map, db, user_id, learning_paths, focused_topic=topic, domain=domain)
@@ -309,10 +345,20 @@ def recommend_next_topics(db: Session, user_id: int, limit: int = 3, domain: str
 
     recommendations = _finalize_candidates(candidate_map, existing_topics, mastery_lookup, domain=domain)
     payload = {"recommendations": recommendations[: max(limit, 3)]}
-    save_cached_payload(db, cache_key, domain or "recommendations", payload)
-    return payload["recommendations"][:limit]
+    return save_ai_insight(
+        db,
+        user_id=user_id,
+        topic_name=topic_scope,
+        feature_type=FEATURE_TYPE,
+        context_hash=context_hash,
+        graph_version=graph_version,
+        source="hybrid",
+        payload=payload,
+        ttl_hours=72,
+    )
 
 
-def recommend_next_topic(db: Session, user_id: int, domain: str = "", topic: str = "") -> dict | None:
-    recommendations = recommend_next_topics(db, user_id, limit=1, domain=domain, topic=topic)
+def recommend_next_topic(db: Session, user_id: int, domain: str = "", topic: str = "", refresh: bool = False) -> dict | None:
+    payload = recommend_next_topics(db, user_id, limit=1, domain=domain, topic=topic, refresh=refresh)
+    recommendations = payload.get("recommendations") or []
     return recommendations[0] if recommendations else None

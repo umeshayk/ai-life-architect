@@ -528,6 +528,7 @@ export default function BrainMap() {
   const [recommendations, setRecommendations] = useState([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [recommendationsError, setRecommendationsError] = useState("");
+  const [recommendationsMeta, setRecommendationsMeta] = useState({ source: "rules", cached: false });
   const [learningPaths, setLearningPaths] = useState([]);
   const [learningPathsError, setLearningPathsError] = useState("");
   const [knowledgeGaps, setKnowledgeGaps] = useState([]);
@@ -613,8 +614,10 @@ export default function BrainMap() {
         },
       });
       setRecommendations(data?.recommendations || []);
+      setRecommendationsMeta({ source: data?.source || "rules", cached: Boolean(data?.cached) });
     } catch (err) {
       setRecommendations([]);
+      setRecommendationsMeta({ source: "rules", cached: false });
       setRecommendationsError(err?.response?.data?.detail || "Unable to load recommendations right now.");
     } finally {
       setRecommendationsLoading(false);
@@ -1793,6 +1796,8 @@ export default function BrainMap() {
             recommendations={recommendations}
             loading={recommendationsLoading}
             error={recommendationsError}
+            source={recommendationsMeta.source}
+            cached={recommendationsMeta.cached}
             onTopicClick={handleSuggestedTopicClick}
             onTopicAction={handleSuggestionAction}
             collapsed={!panelState.recommendations}
@@ -2064,7 +2069,12 @@ export default function BrainMap() {
                                 </div>
                               </div>
                             )}
-                            <p className="source-meta">Source: {topicSummary.source === "ai" ? "AI" : "Rules"}</p>
+                            <div className="row-between">
+                              <p className="source-meta">Source</p>
+                              <span className={`knowledge-expansion-source ${topicSummary.source === "hybrid" ? "hybrid" : topicSummary.source === "ai" ? "ai" : topicSummary.source === "cache" ? "cache" : topicSummary.source === "fallback" ? "fallback" : "rules"}`}>
+                                {topicSummary.source === "hybrid" ? "Hybrid" : topicSummary.source === "ai" ? "AI Generated" : topicSummary.source === "cache" ? "Cached" : topicSummary.source === "fallback" ? "Fallback" : "Rule Based"}
+                              </span>
+                            </div>
                           </div>
                         ) : null}
                       </div>

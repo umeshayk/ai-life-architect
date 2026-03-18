@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 from sqlalchemy.orm import Session
 
+from app.services.ai_insight_store import build_context_hash, get_ai_insight, save_ai_insight
+from app.services.graph_state_service import get_user_graph_version
 from app.services.learning_path_service import LEARNING_PATHS, build_learning_paths
 from app.services.mastery_service import record_mentor_interaction
 
+
+FEATURE_TYPE = "mentor_explanation"
 
 TOPIC_EXPLANATIONS = {
     "Embeddings": "Embeddings turn meaning into vectors so your systems can compare ideas instead of just matching keywords.",
@@ -59,15 +65,12 @@ def _all_topics() -> dict[str, dict[str, str]]:
 
 def _resolve_path(question: str, learning_paths: list[dict]) -> dict | None:
     normalized_question = _normalize(question)
-
     for path in learning_paths:
         if _normalize(path["path_name"]) in normalized_question:
             return path
-
     for path in learning_paths:
         if _normalize(path["domain"]) in normalized_question:
             return path
-
     return learning_paths[0] if learning_paths else None
 
 
@@ -137,7 +140,6 @@ def _topic_state_lookup(path: dict | None) -> dict[str, dict[str, str]]:
 def _recommended_topic_data(path: dict | None, current_topic: str | None = None) -> dict | None:
     if not path:
         return None
-
     topic_lookup = _topic_state_lookup(path)
     if current_topic and _normalize(current_topic) in topic_lookup:
         topics = path["topics"]
@@ -149,7 +151,6 @@ def _recommended_topic_data(path: dict | None, current_topic: str | None = None)
             for topic in topics[current_index + 1:]:
                 if topic["state"] != "covered":
                     return {**topic, "domain": path["domain"]}
-
     next_topic = path.get("next_topic")
     return {**next_topic} if next_topic else None
 
@@ -157,11 +158,9 @@ def _recommended_topic_data(path: dict | None, current_topic: str | None = None)
 def _mentor_path_topics(path: dict | None, current_topic: str | None = None) -> list[dict[str, str]]:
     if not path:
         return []
-
     normalized_current = _normalize(current_topic) if current_topic else ""
     fallback_current = _normalize(path["next_topic"]["topic"]) if path.get("next_topic") and not normalized_current else normalized_current
     topics_payload: list[dict[str, str]] = []
-
     for topic in path["topics"]:
         normalized_topic = _normalize(topic["topic"])
         if topic["state"] == "covered":
@@ -171,29 +170,18 @@ def _mentor_path_topics(path: dict | None, current_topic: str | None = None) -> 
         else:
             mentor_state = "missing"
         topics_payload.append({"topic": topic["topic"], "state": mentor_state})
-
     return topics_payload
 
 
 def _remaining_topics(path: dict | None, current_topic: str | None = None) -> list[str]:
     if not path:
         return []
-
     normalized_current = _normalize(current_topic) if current_topic else ""
     return [
         topic["topic"]
         for topic in path["topics"]
         if topic["state"] != "covered" and _normalize(topic["topic"]) != normalized_current
     ]
-
-
-def _topic_action(path: dict | None, topic_name: str | None) -> str | None:
-    if not path or not topic_name:
-        return None
-    for topic in path["topics"]:
-        if _normalize(topic["topic"]) == _normalize(topic_name):
-            return topic.get("action")
-    return None
 
 
 def _recommended_topic_reason(path: dict | None, current_topic: str | None, recommended_topic: str | None) -> str | None:
@@ -223,20 +211,11 @@ def _classify_question(question: str) -> str:
     return "next"
 
 
-def _build_response(
-    *,
-    answer: str,
-    path: dict | None = None,
-    current_topic: str | None = None,
-    recommended_topic_data: dict | None = None,
-    why_topic: str | None = None,
-    skills_topic: str | None = None,
-) -> dict:
+def _build_response(*, answer: str, path: dict | None = None, current_topic: str | None = None, recommended_topic_data: dict | None = None, why_topic: str | None = None, skills_topic: str | None = None) -> dict:
     recommended_topic = recommended_topic_data.get("topic") if recommended_topic_data else None
     recommendation_path = path or None
     why_topic_name = why_topic or recommended_topic
     skills_topic_name = skills_topic or recommended_topic
-
     return {
         "answer": answer,
         "recommended_topic": recommended_topic,
@@ -251,21 +230,64 @@ def _build_response(
     }
 
 
-def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
+def _context_hash(question: str, learning_paths: list[dict], resolved_path: dict | None, resolved_topic: dict | None, question_type: str) -> str:
+    path_snapshot = [
+        {
+            "path_name": path.get("path_name"),
+            "domain": path.get("domain"),
+            "progress_percent": path.get("progress_percent"),
+            "covered_count": path.get("covered_count"),
+            "total_count": path.get("total_count"),
+            "next_topic": (path.get("next_topic") or {}).get("topic"),
+        }
+        for path in learning_paths
+    ]
+    return build_context_hash(
+        {
+            "question": _normalize(question),
+            "question_type": question_type,
+            "resolved_path": resolved_path.get("path_name") if resolved_path else None,
+            "resolved_topic": (resolved_topic or {}).get("topic"),
+            "paths": path_snapshot,
+            "version": "v2",
+        }
+    )
+
+
+def _topic_scope(question: str, resolved_topic: dict | None, resolved_path: dict | None) -> str:
+    if resolved_topic and resolved_topic.get("topic"):
+        return resolved_topic["topic"]
+    if resolved_path and resolved_path.get("path_name"):
+        return resolved_path["path_name"]
+    normalized = _normalize(question)
+    return normalized or "global"
+
+
+def answer_mentor_question(db: Session, user_id: int, question: str, refresh: bool = False) -> dict:
     learning_paths = build_learning_paths(db, user_id)
     question_type = _classify_question(question)
     resolved_path = _resolve_path(question, learning_paths)
     resolved_topic = _resolve_topic(question)
+    graph_version = get_user_graph_version(db, user_id)
+    topic_scope = _topic_scope(question, resolved_topic, resolved_path)
+    context_hash = _context_hash(question, learning_paths, resolved_path, resolved_topic, question_type)
+
+    if not refresh:
+        cached = get_ai_insight(db, user_id, topic_scope, FEATURE_TYPE, context_hash, graph_version)
+        if cached:
+            return cached
+
     if resolved_topic:
         record_mentor_interaction(db, user_id, resolved_topic.get("topic"))
 
     if question_type == "focus_path":
         target_path = next((path for path in learning_paths if path.get("next_topic")), learning_paths[0] if learning_paths else None)
         if not target_path:
-            return {"answer": "I could not find a learning path yet. Add more knowledge to start building your roadmap."}
+            payload = {"answer": "I could not find a learning path yet. Add more knowledge to start building your roadmap."}
+            return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="fallback", payload=payload)
         next_topic = _recommended_topic_data(target_path)
         topic_name = next_topic["topic"] if next_topic else None
-        return _build_response(
+        payload = _build_response(
             answer=(
                 f"The best learning path to focus on next is {target_path['path_name']} because it is currently active and your next step there is {topic_name}."
                 if topic_name
@@ -275,13 +297,15 @@ def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
             current_topic=topic_name,
             recommended_topic_data=next_topic,
         )
+        return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="rules", payload=payload)
 
     if question_type == "progress":
         target_path = resolved_path or (learning_paths[0] if learning_paths else None)
         if not target_path:
-            return {"answer": "I could not find a learning path to measure yet."}
+            payload = {"answer": "I could not find a learning path to measure yet."}
+            return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="fallback", payload=payload)
         next_topic = _recommended_topic_data(target_path)
-        return _build_response(
+        payload = _build_response(
             answer=(
                 f"You are {target_path['progress_percent']}% of the way through {target_path['path_name']}, with {target_path['covered_count']} of {target_path['total_count']} topics covered."
                 + (f" Your next topic is {next_topic['topic']}." if next_topic else " You have completed this path.")
@@ -290,14 +314,16 @@ def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
             current_topic=next_topic["topic"] if next_topic else None,
             recommended_topic_data=next_topic,
         )
+        return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="rules", payload=payload)
 
     if question_type == "missing":
         target_path = resolved_path or (learning_paths[0] if learning_paths else None)
         if not target_path:
-            return {"answer": "I could not find a matching path to inspect for missing topics."}
+            payload = {"answer": "I could not find a matching path to inspect for missing topics."}
+            return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="fallback", payload=payload)
         remaining_topics = _remaining_topics(target_path)
         next_topic = _recommended_topic_data(target_path)
-        return _build_response(
+        payload = _build_response(
             answer=(
                 f"You are still missing {', '.join(remaining_topics)} in {target_path['path_name']}."
                 if remaining_topics
@@ -307,6 +333,7 @@ def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
             current_topic=next_topic["topic"] if next_topic else None,
             recommended_topic_data=next_topic,
         )
+        return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="rules", payload=payload)
 
     if question_type == "why":
         topic_name = resolved_topic["topic"] if resolved_topic else None
@@ -314,10 +341,11 @@ def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
         if not topic_name:
             topic_name = (topic_path.get("next_topic") or {}).get("topic") if topic_path else None
         if not topic_name:
-            return {"answer": "I could not find which topic you meant. Try asking about a topic from one of your learning paths."}
+            payload = {"answer": "I could not find which topic you meant. Try asking about a topic from one of your learning paths."}
+            return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="fallback", payload=payload)
         next_topic = _recommended_topic_data(topic_path, topic_name)
         unlocked = _skills_unlocked(topic_name, topic_path["path_name"] if topic_path else None)
-        return _build_response(
+        payload = _build_response(
             answer=f"You should learn {topic_name} because {_topic_why(topic_name).rstrip('.')} and it supports the path toward {', '.join(unlocked[:2]) or 'the next stage of your roadmap'}.",
             path=topic_path,
             current_topic=topic_name,
@@ -325,6 +353,7 @@ def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
             why_topic=topic_name,
             skills_topic=topic_name,
         )
+        return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="rules", payload=payload)
 
     if question_type == "unlock":
         topic_name = resolved_topic["topic"] if resolved_topic else None
@@ -332,10 +361,11 @@ def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
         if not topic_name:
             topic_name = (topic_path.get("next_topic") or {}).get("topic") if topic_path else None
         if not topic_name:
-            return {"answer": "I could not find which topic you meant. Try naming a topic from one of your learning paths."}
+            payload = {"answer": "I could not find which topic you meant. Try naming a topic from one of your learning paths."}
+            return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="fallback", payload=payload)
         unlocked = _skills_unlocked(topic_name, topic_path["path_name"] if topic_path else None)
         next_topic = _recommended_topic_data(topic_path, topic_name)
-        return _build_response(
+        payload = _build_response(
             answer=(
                 f"{topic_name} unlocks {', '.join(unlocked)}."
                 if unlocked
@@ -347,14 +377,16 @@ def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
             why_topic=topic_name,
             skills_topic=topic_name,
         )
+        return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="rules", payload=payload)
 
     target_path = resolved_path or (learning_paths[0] if learning_paths else None)
     if not target_path:
-        return {"answer": "I could not find a learning path yet. Add more knowledge to start building your roadmap."}
+        payload = {"answer": "I could not find a learning path yet. Add more knowledge to start building your roadmap."}
+        return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="fallback", payload=payload)
 
     next_topic = _recommended_topic_data(target_path)
     if not next_topic:
-        return {
+        payload = {
             "answer": f"You have completed {target_path['path_name']}. Choose another active path to continue learning.",
             "path_name": target_path["path_name"],
             "path_progress": _path_progress(target_path),
@@ -362,13 +394,15 @@ def answer_mentor_question(db: Session, user_id: int, question: str) -> dict:
             "skills_unlocked": [],
             "path_topics": _mentor_path_topics(target_path),
         }
+        return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="rules", payload=payload)
 
     topic_name = next_topic["topic"]
     record_mentor_interaction(db, user_id, topic_name)
     unlocked = _skills_unlocked(topic_name, target_path["path_name"])
-    return _build_response(
+    payload = _build_response(
         answer=f"Your next best topic in {target_path['domain']} is {topic_name} because it is the next step in {target_path['path_name']} and it unlocks {', '.join(unlocked) or 'the next stage of your roadmap'}.",
         path=target_path,
         current_topic=topic_name,
         recommended_topic_data=next_topic,
     )
+    return save_ai_insight(db, user_id=user_id, topic_name=topic_scope, feature_type=FEATURE_TYPE, context_hash=context_hash, graph_version=graph_version, source="rules", payload=payload)

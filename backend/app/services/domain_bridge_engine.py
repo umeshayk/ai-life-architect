@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.topic import Topic
-from app.services.cache_service import load_cached_payload, save_cached_payload
+from app.services.ai_insight_store import build_context_hash, get_ai_insight, save_ai_insight
 from app.services.graph_service import _build_graph_context, _topic_group
+from app.services.graph_state_service import get_user_graph_version
 from app.services.ollama_service import generate_list
 from app.services.topic_cluster_service import infer_topic_cluster
 from app.services.topic_normalizer_service import canonical_topic_key, normalize_topic_label
 
-CACHE_TTL_HOURS = 12
+FEATURE_TYPE = "bridge_suggestion"
 MIN_RULE_BRIDGES = 3
 MAX_DOMAIN_PAIRS = 4
 
@@ -55,23 +56,7 @@ BRIDGE_RULES = {
     ],
 }
 
-NOISE_TOKENS = {
-    "add",
-    "button",
-    "click",
-    "focu",
-    "focus",
-    "testing",
-    "test",
-    "topic",
-    "topics",
-}
-
-
-def _cache_key(user_id: int, topic_count: int, domain: str = "", topic: str = "") -> str:
-    normalized_domain = canonical_topic_key(domain) or "all"
-    normalized_topic = canonical_topic_key(topic) or "global"
-    return f"bridges:{user_id}:{normalized_domain}:{normalized_topic}:{max(1, topic_count)}"
+NOISE_TOKENS = {"add", "button", "click", "focu", "focus", "testing", "test", "topic", "topics"}
 
 
 def _existing_topic_keys(db: Session, user_id: int, context: dict) -> set[str]:
@@ -107,26 +92,19 @@ def _passes_filters(context: dict, left: str, right: str, domain: str = "", topi
     right_group = _domain_for_topic(context, right)
     if left_group == right_group or "General" in {left_group, right_group}:
         return False
-
     normalized_domain = canonical_topic_key(domain)
     if normalized_domain:
         if canonical_topic_key(left_group) != normalized_domain and canonical_topic_key(right_group) != normalized_domain:
             return False
-
     focused_topic = (topic or "").strip()
     if focused_topic:
         focused_domain = _topic_group(focused_topic)
         if focused_topic not in {left, right} and focused_domain not in {left_group, right_group}:
             return False
-
     return True
 
 
-def _analyze_graph_clusters(
-    context: dict,
-    domain: str = "",
-    topic: str = "",
-) -> list[dict]:
+def _analyze_graph_clusters(context: dict, domain: str = "", topic: str = "") -> list[dict]:
     pair_scores: Counter[tuple[str, str]] = Counter()
     pair_topics: defaultdict[tuple[str, str], Counter[str]] = defaultdict(Counter)
     pair_clusters: defaultdict[tuple[str, str], Counter[str]] = defaultdict(Counter)
@@ -134,19 +112,16 @@ def _analyze_graph_clusters(
     def register_pair(left: str, right: str, weight: float, source: str) -> None:
         if not _passes_filters(context, left, right, domain=domain, topic=topic):
             return
-
         left_group = _domain_for_topic(context, left)
         right_group = _domain_for_topic(context, right)
         pair_key = tuple(sorted((left_group, right_group)))
         left_cluster = _cluster_for_topic(context, left)
         right_cluster = _cluster_for_topic(context, right)
         focused_topic = (topic or "").strip()
-
         source_multiplier = 1.25 if source == "relationship" else 1.0
         focus_multiplier = 1.6 if focused_topic and focused_topic in {left, right} else 1.0
         cross_cluster_bonus = 0.25 if left_cluster != right_cluster else 0.0
         total_weight = weight * source_multiplier * focus_multiplier + cross_cluster_bonus
-
         pair_scores[pair_key] += total_weight
         pair_topics[pair_key][left] += total_weight
         pair_topics[pair_key][right] += total_weight
@@ -155,56 +130,42 @@ def _analyze_graph_clusters(
 
     for (left, right), weight in context.get("pair_counts", Counter()).items():
         register_pair(left, right, float(weight), "cooccurrence")
-
     for relationship in context.get("stored_relationships", []):
-        register_pair(
-            relationship.source_topic,
-            relationship.target_topic,
-            max(1.0, float(relationship.confidence or 0.0) * 3.0),
-            "relationship",
-        )
+        register_pair(relationship.source_topic, relationship.target_topic, max(1.0, float(relationship.confidence or 0.0) * 3.0), "relationship")
 
     ranked: list[dict] = []
     for pair_key, score in pair_scores.most_common(MAX_DOMAIN_PAIRS):
-        ranked.append(
-            {
-                "pair_key": pair_key,
-                "score": float(score),
-                "topics": [name for name, _ in pair_topics[pair_key].most_common(6)],
-                "clusters": [name for name, _ in pair_clusters[pair_key].most_common(4)],
-            }
-        )
+        ranked.append({
+            "pair_key": pair_key,
+            "score": float(score),
+            "topics": [name for name, _ in pair_topics[pair_key].most_common(6)],
+            "clusters": [name for name, _ in pair_clusters[pair_key].most_common(4)],
+        })
     return ranked
 
 
 def _cluster_rule_candidates(pair_key: tuple[str, str], clusters: list[str]) -> list[str]:
     cluster_text = " ".join(clusters).lower()
     candidates: list[str] = []
-
     if pair_key == tuple(sorted(("AI", "Knowledge"))):
         if "retrieval" in cluster_text or "knowledge systems" in cluster_text:
             candidates.extend(["Semantic Retrieval", "Knowledge Graph Construction"])
         if "representation" in cluster_text:
             candidates.append("Embedding Taxonomy")
-
     if pair_key == tuple(sorted(("AI", "Agriculture"))):
         if "retrieval" in cluster_text or "automation" in cluster_text:
             candidates.extend(["Sensor Monitoring", "Predictive Irrigation"])
         if "ranking" in cluster_text:
             candidates.append("Crop Prioritization")
-
     if pair_key == tuple(sorted(("AI", "Business"))):
         if "ranking" in cluster_text or "real estate" in cluster_text:
             candidates.extend(["Decision Intelligence", "Opportunity Scoring"])
-
     if pair_key == tuple(sorted(("Business", "Knowledge"))):
         if "knowledge systems" in cluster_text or "real estate" in cluster_text:
             candidates.extend(["Decision Frameworks", "Operational Playbooks"])
-
     if pair_key == tuple(sorted(("Agriculture", "Knowledge"))):
         if "agriculture automation" in cluster_text or "knowledge systems" in cluster_text:
             candidates.extend(["Field Playbooks", "Agriculture Knowledge Systems"])
-
     ordered: list[str] = []
     seen: set[str] = set()
     for candidate in candidates:
@@ -215,26 +176,17 @@ def _cluster_rule_candidates(pair_key: tuple[str, str], clusters: list[str]) -> 
     return ordered
 
 
-def _rule_bridges(
-    db: Session,
-    user_id: int,
-    context: dict,
-    domain: str = "",
-    topic: str = "",
-    limit: int = 4,
-) -> tuple[list[dict], float, list[dict]]:
+def _rule_bridges(db: Session, user_id: int, context: dict, domain: str = "", topic: str = "", limit: int = 4) -> tuple[list[dict], float, list[dict]]:
     existing_keys = _existing_topic_keys(db, user_id, context)
     ranked_pairs = _analyze_graph_clusters(context, domain=domain, topic=topic)
     suggestions: list[dict] = []
     seen: set[str] = set()
-
     for ranked_pair in ranked_pairs:
         pair_key = ranked_pair["pair_key"]
         pair_score = ranked_pair["score"]
         context_topics = ranked_pair["topics"]
         clusters = ranked_pair["clusters"]
         candidates = _cluster_rule_candidates(pair_key, clusters) + BRIDGE_RULES.get(pair_key, [])
-
         for index, candidate in enumerate(candidates):
             cleaned = _clean_bridge_topic(candidate)
             candidate_key = canonical_topic_key(cleaned)
@@ -243,21 +195,18 @@ def _rule_bridges(
             seen.add(candidate_key)
             confidence = max(0.58, min(0.95, 0.61 + pair_score / 14 - index * 0.04))
             cluster_text = ", ".join(clusters[:2]) if clusters else "active clusters"
-            suggestions.append(
-                {
-                    "topic": cleaned,
-                    "domains": list(pair_key),
-                    "confidence": round(confidence, 2),
-                    "source": "rules",
-                    "reason": f"{cleaned} can connect your {pair_key[0]} and {pair_key[1]} knowledge through {cluster_text}.",
-                    "context_topics": context_topics[:4],
-                }
-            )
+            suggestions.append({
+                "topic": cleaned,
+                "domains": list(pair_key),
+                "confidence": round(confidence, 2),
+                "source": "rules",
+                "reason": f"{cleaned} can connect your {pair_key[0]} and {pair_key[1]} knowledge through {cluster_text}.",
+                "context_topics": context_topics[:4],
+            })
             if len(suggestions) >= limit:
                 break
         if len(suggestions) >= limit:
             break
-
     confidence = 0.86 if len(suggestions) >= MIN_RULE_BRIDGES else 0.68 if suggestions else 0.0
     return suggestions[:limit], confidence, ranked_pairs
 
@@ -265,7 +214,6 @@ def _rule_bridges(
 def _ai_bridge_suggestions(ranked_pairs: list[dict], existing_keys: set[str], limit: int) -> list[dict]:
     results: list[dict] = []
     seen = set(existing_keys)
-
     for ranked_pair in ranked_pairs:
         if len(results) >= limit:
             break
@@ -290,33 +238,28 @@ def _ai_bridge_suggestions(ranked_pairs: list[dict], existing_keys: set[str], li
             generated = generate_list(prompt, timeout=20)
         except Exception:
             continue
-
         for raw in generated:
             cleaned = _clean_bridge_topic(raw)
             cleaned_key = canonical_topic_key(cleaned)
             if not cleaned or not cleaned_key or cleaned_key in seen:
                 continue
             seen.add(cleaned_key)
-            results.append(
-                {
-                    "topic": cleaned,
-                    "domains": list(pair_key),
-                    "confidence": 0.72,
-                    "source": "ai",
-                    "reason": f"{cleaned} is a plausible bridge between {pair_key[0]} and {pair_key[1]} based on your current clusters.",
-                    "context_topics": context_topics[:4],
-                }
-            )
+            results.append({
+                "topic": cleaned,
+                "domains": list(pair_key),
+                "confidence": 0.72,
+                "source": "ai",
+                "reason": f"{cleaned} is a plausible bridge between {pair_key[0]} and {pair_key[1]} based on your current clusters.",
+                "context_topics": context_topics[:4],
+            })
             if len(results) >= limit:
                 break
-
     return results[:limit]
 
 
 def _relationship_only_pairs(context: dict, domain: str = "", topic: str = "") -> list[dict]:
     fallback_pairs: Counter[tuple[str, str]] = Counter()
     fallback_topics: defaultdict[tuple[str, str], Counter[str]] = defaultdict(Counter)
-
     for relationship in context.get("stored_relationships", []):
         if not _passes_filters(context, relationship.source_topic, relationship.target_topic, domain=domain, topic=topic):
             continue
@@ -327,32 +270,43 @@ def _relationship_only_pairs(context: dict, domain: str = "", topic: str = "") -
         fallback_pairs[pair_key] += weight
         fallback_topics[pair_key][relationship.source_topic] += weight
         fallback_topics[pair_key][relationship.target_topic] += weight
-
-    return [
-        {
-            "pair_key": pair_key,
-            "score": float(score),
-            "topics": [name for name, _ in fallback_topics[pair_key].most_common(6)],
-            "clusters": [],
-        }
-        for pair_key, score in fallback_pairs.most_common(MAX_DOMAIN_PAIRS)
-    ]
+    return [{
+        "pair_key": pair_key,
+        "score": float(score),
+        "topics": [name for name, _ in fallback_topics[pair_key].most_common(6)],
+        "clusters": [],
+    } for pair_key, score in fallback_pairs.most_common(MAX_DOMAIN_PAIRS)]
 
 
-def discover_domain_bridges(db: Session, user_id: int, limit: int = 4, domain: str = "", topic: str = "") -> list[dict]:
+def _context_hash(context: dict, domain: str, topic: str) -> str:
+    ranked_pairs = _analyze_graph_clusters(context, domain=domain, topic=topic)
+    return build_context_hash({
+        "domain": domain,
+        "topic": topic,
+        "pairs": ranked_pairs,
+        "topic_names": context.get("topic_names", [])[:30],
+        "version": "v2",
+    })
+
+
+def discover_domain_bridges(db: Session, user_id: int, limit: int = 4, domain: str = "", topic: str = "", refresh: bool = False) -> dict:
     context = _build_graph_context(db, user_id)
-    topic_count = int(db.scalar(select(func.count(Topic.id)).where(Topic.user_id == user_id)) or 0)
-    cache_key = _cache_key(user_id, topic_count, domain, topic)
-    cached = load_cached_payload(db, cache_key, ttl_hours=CACHE_TTL_HOURS)
-    if cached and isinstance(cached.get("bridges"), list):
-        return cached["bridges"][:limit]
+    graph_version = get_user_graph_version(db, user_id)
+    context_hash = _context_hash(context, domain, topic)
+    topic_scope = topic or domain or "global"
+
+    if not refresh:
+        cached = get_ai_insight(db, user_id, topic_scope, FEATURE_TYPE, context_hash, graph_version)
+        if cached and isinstance(cached.get("bridges"), list):
+            cached["bridges"] = cached["bridges"][:limit]
+            return cached
 
     rule_results, rule_confidence, ranked_pairs = _rule_bridges(db, user_id, context, domain=domain, topic=topic, limit=limit)
     final_results = list(rule_results)
-
     if not ranked_pairs:
         ranked_pairs = _relationship_only_pairs(context, domain=domain, topic=topic)
 
+    final_source = "rules"
     if len(final_results) == 0 or (topic and len(final_results) < 2 and rule_confidence < 0.7):
         ai_results = _ai_bridge_suggestions(
             ranked_pairs,
@@ -368,7 +322,22 @@ def discover_domain_bridges(db: Session, user_id: int, limit: int = 4, domain: s
                 continue
             final_results.append(item)
             existing_final_keys.add(topic_key)
+        if rule_results and ai_results:
+            final_source = "hybrid"
+        elif ai_results:
+            final_source = "ai"
+        elif not rule_results:
+            final_source = "fallback"
 
     payload = {"bridges": final_results[:limit]}
-    save_cached_payload(db, cache_key, topic or domain or "domain-bridges", payload)
-    return payload["bridges"][:limit]
+    return save_ai_insight(
+        db,
+        user_id=user_id,
+        topic_name=topic_scope,
+        feature_type=FEATURE_TYPE,
+        context_hash=context_hash,
+        graph_version=graph_version,
+        source=final_source,
+        payload=payload,
+        ttl_hours=72,
+    )

@@ -9,17 +9,19 @@ from sqlalchemy.orm import Session
 from app.models.content_topic import ContentTopic
 from app.models.topic import Topic
 from app.models.topic_relationship import TopicRelationship
-from app.services.cache_service import build_suggestion_cache_key, load_cached_payload, save_cached_payload
+from app.services.ai_insight_store import build_context_hash, get_ai_insight, save_ai_insight
 from app.services.graph_service import _topic_group
+from app.services.graph_state_service import get_user_graph_version
 from app.services.learning_path_service import LEARNING_PATHS
 from app.services.ollama_service import generate_topic_expansion
 from app.services.topic_normalizer_service import canonical_topic_key, normalize_topic_label
 
 
 logger = logging.getLogger(__name__)
+FEATURE_TYPE = "knowledge_expansion"
 RULE_CONFIDENCE_THRESHOLD = 0.80
 RULE_MIN_SUGGESTIONS = 3
-CACHE_TTL_HOURS = 24
+CACHE_TTL_HOURS = 72
 MAX_SUGGESTIONS = 5
 
 FALLBACK_TOPIC_RELATIONSHIPS = {
@@ -61,24 +63,22 @@ DISPLAY_WORDS = {
 
 
 def _clean_topic_name(value: str) -> str:
-    normalized = re.sub(r'[^a-zA-Z0-9\s/-]+', ' ', (value or '').strip())
-    normalized = re.sub(r'\s+', ' ', normalized).strip(' -_/')
+    normalized = re.sub(r"[^a-zA-Z0-9\s/-]+", " ", (value or "").strip())
+    normalized = re.sub(r"\s+", " ", normalized).strip(" -_/")
     if not normalized:
-        return ''
+        return ""
 
     words = normalized.split()
     if len(words) > 4:
-        return ''
+        return ""
 
     lowered = normalized.lower()
     if lowered in GENERIC_JUNK:
-        return ''
+        return ""
 
     lower_words = [word.lower() for word in words]
     if any(word in NOISE_TOKENS for word in lower_words):
-        return ''
-    if sum(1 for word in lower_words if word in NOISE_TOKENS) >= 1:
-        return ''
+        return ""
 
     formatted_words: list[str] = []
     for word in words:
@@ -90,20 +90,20 @@ def _clean_topic_name(value: str) -> str:
         else:
             formatted_words.append(word.title())
 
-    candidate = ' '.join(formatted_words).strip()
+    candidate = " ".join(formatted_words).strip()
     if not candidate or candidate.lower() in GENERIC_JUNK:
-        return ''
+        return ""
 
     candidate_key = canonical_topic_key(candidate)
     if any(token in candidate_key.split() for token in NOISE_TOKENS):
-        return ''
+        return ""
     return candidate
 
 
 def _resolve_topic_name(existing_topics: list[Topic], topic_name: str) -> str:
-    lowered = (topic_name or '').strip().lower()
+    lowered = (topic_name or "").strip().lower()
     for topic in existing_topics:
-        if (topic.name or '').strip().lower() == lowered:
+        if (topic.name or "").strip().lower() == lowered:
             return topic.name
     return _clean_topic_name(topic_name) or topic_name.strip()
 
@@ -111,7 +111,7 @@ def _resolve_topic_name(existing_topics: list[Topic], topic_name: str) -> str:
 def _topic_path(topic_name: str) -> dict[str, object] | None:
     key = canonical_topic_key(topic_name)
     for path in LEARNING_PATHS:
-        if any(canonical_topic_key(path_topic) == key for path_topic in path['topics']):
+        if any(canonical_topic_key(path_topic) == key for path_topic in path["topics"]):
             return path
     return None
 
@@ -176,7 +176,7 @@ def _rule_based_stack_suggestions(topic_name: str, context_topics: list[str]) ->
     if not path:
         return []
 
-    path_topics = path['topics']
+    path_topics = path["topics"]
     try:
         current_index = next(index for index, name in enumerate(path_topics) if canonical_topic_key(name) == canonical_topic_key(topic_name))
     except StopIteration:
@@ -208,7 +208,7 @@ def _rule_based_neighbor_suggestions(topic_name: str, context_topics: list[str])
 
 
 def get_rule_based_suggestions(topic_name: str, context: dict) -> dict:
-    context_topics = context.get('context_topics') or []
+    context_topics = context.get("context_topics") or []
     path_suggestions = _rule_based_stack_suggestions(topic_name, context_topics)
     neighbor_suggestions = _rule_based_neighbor_suggestions(topic_name, context_topics)
 
@@ -229,35 +229,35 @@ def get_rule_based_suggestions(topic_name: str, context: dict) -> dict:
     confidence = round(min(0.95, confidence), 2)
 
     return {
-        'source': 'rules',
-        'confidence': confidence,
-        'suggestions': merged,
+        "source": "rules",
+        "confidence": confidence,
+        "suggestions": merged,
     }
 
 
 def get_ai_suggestions(topic_name: str, context: dict) -> dict:
-    context_topics = context.get('context_topics') or []
-    known_domain = context.get('domain') or _topic_group(topic_name)
-    known_path = context.get('learning_path') or 'No named path found'
-    known_topics = context.get('known_topics') or []
-    missing_topics = context.get('missing_topics') or []
+    context_topics = context.get("context_topics") or []
+    known_domain = context.get("domain") or _topic_group(topic_name)
+    known_path = context.get("learning_path") or "No named path found"
+    known_topics = context.get("known_topics") or []
+    missing_topics = context.get("missing_topics") or []
 
-    related_block = '\n'.join(f'- {topic}' for topic in context_topics) or '- None yet'
-    known_block = '\n'.join(f'- {topic}' for topic in known_topics[:8]) or '- None yet'
-    missing_block = '\n'.join(f'- {topic}' for topic in missing_topics[:6]) or '- None known'
+    related_block = "\n".join(f"- {topic}" for topic in context_topics) or "- None yet"
+    known_block = "\n".join(f"- {topic}" for topic in known_topics[:8]) or "- None yet"
+    missing_block = "\n".join(f"- {topic}" for topic in missing_topics[:6]) or "- None known"
     prompt = (
-        'You are helping expand a personal knowledge graph.\n'
-        'Return only concise concept names.\n'
-        'Do not explain.\n'
-        'Do not return sentences.\n'
-        'Return at most 5 concepts, one per line.\n'
-        'Do not return duplicates or concepts already known.\n\n'
-        f'Focused topic: {topic_name}\n'
-        f'Domain: {known_domain}\n'
-        f'Learning path: {known_path}\n\n'
-        f'Known neighboring topics:\n{related_block}\n\n'
-        f'Already known topics:\n{known_block}\n\n'
-        f'Missing topics if known:\n{missing_block}\n'
+        "You are helping expand a personal knowledge graph.\n"
+        "Return only concise concept names.\n"
+        "Do not explain.\n"
+        "Do not return sentences.\n"
+        "Return at most 5 concepts, one per line.\n"
+        "Do not return duplicates or concepts already known.\n\n"
+        f"Focused topic: {topic_name}\n"
+        f"Domain: {known_domain}\n"
+        f"Learning path: {known_path}\n\n"
+        f"Known neighboring topics:\n{related_block}\n\n"
+        f"Already known topics:\n{known_block}\n\n"
+        f"Missing topics if known:\n{missing_block}\n"
     )
 
     suggestions = generate_topic_expansion(prompt)
@@ -277,9 +277,9 @@ def get_ai_suggestions(topic_name: str, context: dict) -> dict:
 
     confidence = round(0.62 + min(0.18, len(cleaned) * 0.03), 2) if cleaned else 0.0
     return {
-        'source': 'ai',
-        'confidence': confidence,
-        'suggestions': cleaned,
+        "source": "ai",
+        "confidence": confidence,
+        "suggestions": cleaned,
     }
 
 
@@ -301,17 +301,35 @@ def _filter_final_suggestions(topic_name: str, suggestions: list[str], existing_
     return filtered
 
 
+def _context_hash(resolved_topic_name: str, context_topics: list[str], domain: str, learning_path: str | None, known_topics: list[str], missing_topics: list[str]) -> str:
+    return build_context_hash(
+        {
+            "topic": resolved_topic_name,
+            "domain": domain,
+            "learning_path": learning_path,
+            "context_topics": context_topics[:7],
+            "known_topics": sorted(known_topics)[:20],
+            "missing_topics": missing_topics[:10],
+            "version": "v2",
+        }
+    )
+
+
 def suggest_missing_topics(db: Session, user_id: int, topic_name: str, limit: int = MAX_SUGGESTIONS, refresh: bool = False) -> dict[str, object]:
-    normalized_topic = (topic_name or '').strip()
+    normalized_topic = (topic_name or "").strip()
+    graph_version = get_user_graph_version(db, user_id)
     if not normalized_topic:
         return {
-            'topic': topic_name,
-            'source': 'rules',
-            'cached': False,
-            'rule_confidence': 0.0,
-            'ai_confidence': 0.0,
-            'context_topics': [],
-            'suggestions': [],
+            "topic": topic_name,
+            "source": "rules",
+            "stored_source": "rules",
+            "cached": False,
+            "feature_type": FEATURE_TYPE,
+            "graph_version": graph_version,
+            "rule_confidence": 0.0,
+            "ai_confidence": 0.0,
+            "context_topics": [],
+            "suggestions": [],
         }
 
     existing_topics = db.scalars(select(Topic).where(Topic.user_id == user_id)).all()
@@ -325,82 +343,88 @@ def suggest_missing_topics(db: Session, user_id: int, topic_name: str, limit: in
     path = _topic_path(resolved_topic_name)
     missing_topics = []
     if path:
-        path_topics = path['topics']
+        path_topics = path["topics"]
         missing_topics = [name for name in path_topics if canonical_topic_key(name) not in existing_topic_keys]
     domain = _topic_group(resolved_topic_name)
-    graph_version = max(1, len(context_topics))
-    cache_key = build_suggestion_cache_key(resolved_topic_name, graph_version)
+    learning_path = path["path_name"] if path and "path_name" in path else path["name"] if path else None
+    context_hash = _context_hash(resolved_topic_name, context_topics, domain, learning_path, known_topics, missing_topics)
 
     if not refresh:
-        cached = load_cached_payload(db, cache_key, ttl_hours=CACHE_TTL_HOURS)
+        cached = get_ai_insight(db, user_id, resolved_topic_name, FEATURE_TYPE, context_hash, graph_version)
         if cached:
             cached_suggestions = _filter_final_suggestions(
                 resolved_topic_name,
-                cached.get('suggestions') or [],
+                cached.get("suggestions") or [],
                 existing_topic_keys,
                 context_topic_keys,
                 limit,
             )
-            cached['suggestions'] = cached_suggestions
-            cached['cached'] = True
-            cached['source'] = 'cache'
-            cached['topic'] = resolved_topic_name
-            cached['context_topics'] = context_topics[:7]
+            cached["suggestions"] = cached_suggestions
+            cached["topic"] = resolved_topic_name
+            cached["context_topics"] = context_topics[:7]
             return cached
 
     context = {
-        'context_topics': context_topics,
-        'domain': domain,
-        'learning_path': path['path_name'] if path and 'path_name' in path else path['name'] if path else None,
-        'known_topics': known_topics,
-        'missing_topics': missing_topics,
+        "context_topics": context_topics,
+        "domain": domain,
+        "learning_path": learning_path,
+        "known_topics": known_topics,
+        "missing_topics": missing_topics,
     }
 
     rule_result = get_rule_based_suggestions(resolved_topic_name, context)
     rule_suggestions = _filter_final_suggestions(
         resolved_topic_name,
-        rule_result['suggestions'],
+        rule_result["suggestions"],
         existing_topic_keys,
         context_topic_keys,
         limit,
     )
 
-    ai_result = {'source': 'ai', 'confidence': 0.0, 'suggestions': []}
-    final_source = 'rules'
+    ai_result = {"source": "ai", "confidence": 0.0, "suggestions": []}
+    final_source = "rules"
     final_suggestions = rule_suggestions
 
-    should_call_ai = refresh or len(rule_suggestions) < RULE_MIN_SUGGESTIONS or rule_result['confidence'] < RULE_CONFIDENCE_THRESHOLD
+    should_call_ai = refresh or len(rule_suggestions) < RULE_MIN_SUGGESTIONS or rule_result["confidence"] < RULE_CONFIDENCE_THRESHOLD
     if should_call_ai:
         try:
             ai_result = get_ai_suggestions(resolved_topic_name, context)
         except Exception as exc:
-            logger.warning('Hybrid suggestion AI fallback for %s: %s', resolved_topic_name, exc)
-            ai_result = {'source': 'ai', 'confidence': 0.0, 'suggestions': []}
+            logger.warning("Hybrid suggestion AI fallback for %s: %s", resolved_topic_name, exc)
+            ai_result = {"source": "ai", "confidence": 0.0, "suggestions": []}
 
         merged = _filter_final_suggestions(
             resolved_topic_name,
-            [*rule_suggestions, *(ai_result.get('suggestions') or [])],
+            [*rule_suggestions, *(ai_result.get("suggestions") or [])],
             existing_topic_keys,
             context_topic_keys,
             limit,
         )
         final_suggestions = merged
-        if rule_suggestions and ai_result.get('suggestions'):
-            final_source = 'hybrid'
-        elif ai_result.get('suggestions'):
-            final_source = 'ai'
+        if rule_suggestions and ai_result.get("suggestions"):
+            final_source = "hybrid"
+        elif ai_result.get("suggestions"):
+            final_source = "ai"
+        elif rule_suggestions:
+            final_source = "rules"
         else:
-            final_source = 'rules'
+            final_source = "fallback"
 
     payload = {
-        'topic': resolved_topic_name,
-        'source': final_source,
-        'cached': False,
-        'rule_confidence': round(rule_result['confidence'], 2),
-        'ai_confidence': round(ai_result.get('confidence', 0.0), 2),
-        'context_topics': context_topics[:7],
-        'suggestions': final_suggestions[:limit],
+        "topic": resolved_topic_name,
+        "rule_confidence": round(rule_result["confidence"], 2),
+        "ai_confidence": round(ai_result.get("confidence", 0.0), 2),
+        "context_topics": context_topics[:7],
+        "suggestions": final_suggestions[:limit],
     }
-    save_cached_payload(db, cache_key, resolved_topic_name, payload)
-    return payload
-
+    return save_ai_insight(
+        db,
+        user_id=user_id,
+        topic_name=resolved_topic_name,
+        feature_type=FEATURE_TYPE,
+        context_hash=context_hash,
+        graph_version=graph_version,
+        source=final_source,
+        payload=payload,
+        ttl_hours=CACHE_TTL_HOURS,
+    )

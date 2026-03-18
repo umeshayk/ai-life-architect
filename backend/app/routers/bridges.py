@@ -15,8 +15,16 @@ def get_domain_bridges(
     limit: int = Query(4, ge=1, le=8),
     domain: str = Query(""),
     topic: str = Query(""),
+    refresh: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    bridges = discover_domain_bridges(db, current_user.id, limit=limit, domain=domain, topic=topic)
-    return DomainBridgeListResponse(bridges=bridges)
+    payload = discover_domain_bridges(db, current_user.id, limit=limit, domain=domain, topic=topic, refresh=refresh)
+    return DomainBridgeListResponse(
+        bridges=payload.get("bridges", []),
+        source=payload.get("source", "rules"),
+        stored_source=payload.get("stored_source"),
+        cached=payload.get("cached", False),
+        feature_type=payload.get("feature_type", "bridge_suggestion"),
+        graph_version=payload.get("graph_version"),
+    )

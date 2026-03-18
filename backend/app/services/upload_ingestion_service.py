@@ -5,6 +5,7 @@ from app.models.content_topic import ContentTopic
 from app.models.knowledge import KnowledgeItem
 from app.services.connection_service import rebuild_connections_for_user
 from app.services.embeddings import sync_knowledge_embedding
+from app.services.graph_state_service import bump_user_graph_version
 from app.services.knowledge_gap_service import get_next_learning_topics
 from app.services.learning_path_service import build_learning_paths
 from app.services.summarizer import build_summary_and_tags
@@ -35,7 +36,6 @@ def _build_learning_path_impacts(before_paths: list[dict], after_paths: list[dic
     before_map = _path_snapshot(before_paths)
     normalized_set = {topic.lower() for topic in normalized_topics}
     impacts: list[dict] = []
-
     for after_path in after_paths:
         path_topic_names = {topic.lower() for topic in _path_topic_names(after_path)}
         touches_path = bool(path_topic_names & normalized_set)
@@ -44,10 +44,8 @@ def _build_learning_path_impacts(before_paths: list[dict], after_paths: list[dic
         before_covered = before_path["covered_count"] if before_path else 0
         after_progress = after_path["progress_percent"]
         after_covered = after_path["covered_count"]
-
         if not touches_path or (before_progress == after_progress and before_covered == after_covered):
             continue
-
         impacts.append(
             {
                 "path_name": after_path["path_name"],
@@ -58,47 +56,29 @@ def _build_learning_path_impacts(before_paths: list[dict], after_paths: list[dic
                 "total_count": after_path["total_count"],
             }
         )
-
     return impacts
 
 
-def _build_ingestion_summary(
-    db: Session,
-    *,
-    item: KnowledgeItem,
-    preview: dict[str, list[str]],
-    after_paths: list[dict],
-    before_paths: list[dict],
-    graph_updated: bool,
-) -> dict:
+def _build_ingestion_summary(db: Session, *, item: KnowledgeItem, preview: dict[str, list[str]], after_paths: list[dict], before_paths: list[dict], graph_updated: bool, graph_version: int | None) -> dict:
     normalized_topics = [
         content_topic.topic.name
         for content_topic in item.content_topics
         if content_topic.topic is not None and content_topic.topic.name
     ]
     suggested_next_topics = [topic["topic"] for topic in get_next_learning_topics(db, item.user_id, limit=3)]
-
     return {
         "item_id": item.id,
         "title": item.title,
         "extracted_topics": preview.get("extracted_topics", []),
         "normalized_topics": normalized_topics or preview.get("normalized_topics", []),
         "graph_updated": graph_updated,
+        "graph_version": graph_version,
         "learning_paths_affected": _build_learning_path_impacts(before_paths, after_paths, normalized_topics or preview.get("normalized_topics", [])),
         "suggested_next_topics": suggested_next_topics,
     }
 
 
-def _apply_item_content(
-    item: KnowledgeItem,
-    *,
-    item_type: str,
-    title: str,
-    content: str,
-    source_url: str | None,
-    tags: list[str] | None,
-    file_name: str | None,
-) -> None:
+def _apply_item_content(item: KnowledgeItem, *, item_type: str, title: str, content: str, source_url: str | None, tags: list[str] | None, file_name: str | None) -> None:
     summary, generated_tags = build_summary_and_tags(title, content)
     item.type = item_type
     item.title = title
@@ -109,17 +89,9 @@ def _apply_item_content(
     item.file_name = file_name
 
 
-def finalize_ingested_item(
-    db: Session,
-    item: KnowledgeItem,
-    *,
-    before_paths: list[dict],
-    skip_topic_generation: bool = False,
-    preview: dict[str, list[str]] | None = None,
-) -> tuple[KnowledgeItem, dict]:
+def finalize_ingested_item(db: Session, item: KnowledgeItem, *, before_paths: list[dict], skip_topic_generation: bool = False, preview: dict[str, list[str]] | None = None) -> tuple[KnowledgeItem, dict]:
     if preview is None:
         preview = preview_topics_for_item(item)
-
     sync_knowledge_embedding(db, item)
     if not skip_topic_generation:
         assign_topics_to_item(db, item, source_method="upload")
@@ -139,8 +111,11 @@ def finalize_ingested_item(
                 source_method="upload",
             )
     rebuild_connections_for_user(db, item.user_id)
-
     loaded_item = load_knowledge_item_with_relations(db, item.id)
+    graph_updated = not skip_topic_generation and bool(loaded_item.content_topics)
+    graph_version = bump_user_graph_version(db, item.user_id, reason="upload_ingestion") if graph_updated else None
+    db.commit()
+    loaded_item = load_knowledge_item_with_relations(db, item.id) or loaded_item
     after_paths = build_learning_paths(db, item.user_id)
     summary = _build_ingestion_summary(
         db,
@@ -148,23 +123,13 @@ def finalize_ingested_item(
         preview=preview,
         after_paths=after_paths,
         before_paths=before_paths,
-        graph_updated=not skip_topic_generation and bool(loaded_item.content_topics),
+        graph_updated=graph_updated,
+        graph_version=graph_version,
     )
     return loaded_item, summary
 
 
-def create_ingested_knowledge_item(
-    db: Session,
-    *,
-    user_id: int,
-    item_type: str,
-    title: str,
-    content: str,
-    source_url: str | None = None,
-    tags: list[str] | None = None,
-    file_name: str | None = None,
-    skip_topic_generation: bool = False,
-) -> tuple[KnowledgeItem, dict]:
+def create_ingested_knowledge_item(db: Session, *, user_id: int, item_type: str, title: str, content: str, source_url: str | None = None, tags: list[str] | None = None, file_name: str | None = None, skip_topic_generation: bool = False) -> tuple[KnowledgeItem, dict]:
     before_paths = build_learning_paths(db, user_id)
     preview_source = KnowledgeItem(
         id=-1,
@@ -178,35 +143,15 @@ def create_ingested_knowledge_item(
         file_name=file_name,
     )
     preview = preview_topics_for_item(preview_source) if not skip_topic_generation else {"extracted_topics": [], "normalized_topics": []}
-
     item = KnowledgeItem(user_id=user_id)
-    _apply_item_content(
-        item,
-        item_type=item_type,
-        title=title,
-        content=content,
-        source_url=source_url,
-        tags=tags,
-        file_name=file_name,
-    )
+    _apply_item_content(item, item_type=item_type, title=title, content=content, source_url=source_url, tags=tags, file_name=file_name)
     db.add(item)
     db.commit()
     db.refresh(item)
     return finalize_ingested_item(db, item, before_paths=before_paths, skip_topic_generation=skip_topic_generation, preview=preview)
 
 
-def update_ingested_knowledge_item(
-    db: Session,
-    item: KnowledgeItem,
-    *,
-    item_type: str,
-    title: str,
-    content: str,
-    source_url: str | None = None,
-    tags: list[str] | None = None,
-    file_name: str | None = None,
-    skip_topic_generation: bool = False,
-) -> tuple[KnowledgeItem, dict]:
+def update_ingested_knowledge_item(db: Session, item: KnowledgeItem, *, item_type: str, title: str, content: str, source_url: str | None = None, tags: list[str] | None = None, file_name: str | None = None, skip_topic_generation: bool = False) -> tuple[KnowledgeItem, dict]:
     before_paths = build_learning_paths(db, item.user_id)
     preview_source = KnowledgeItem(
         id=item.id,
@@ -220,17 +165,7 @@ def update_ingested_knowledge_item(
         file_name=file_name,
     )
     preview = preview_topics_for_item(preview_source) if not skip_topic_generation else {"extracted_topics": [], "normalized_topics": []}
-
-    _apply_item_content(
-        item,
-        item_type=item_type,
-        title=title,
-        content=content,
-        source_url=source_url,
-        tags=tags,
-        file_name=file_name,
-    )
+    _apply_item_content(item, item_type=item_type, title=title, content=content, source_url=source_url, tags=tags, file_name=file_name)
     db.commit()
     db.refresh(item)
     return finalize_ingested_item(db, item, before_paths=before_paths, skip_topic_generation=skip_topic_generation, preview=preview)
-

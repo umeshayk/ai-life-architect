@@ -65,7 +65,10 @@ class TopicCreateResponse(BaseModel):
 class TopicExpansionResponse(BaseModel):
     topic: str
     source: str = "rules"
+    stored_source: str | None = None
     cached: bool = False
+    feature_type: str = "knowledge_expansion"
+    graph_version: int | None = None
     rule_confidence: float = 0.0
     ai_confidence: float = 0.0
     context_topics: list[str] = []
@@ -78,6 +81,10 @@ class TopicSummaryResponse(BaseModel):
     why_it_matters: str
     skills_unlocked: list[str] = []
     source: str = "rules"
+    stored_source: str | None = None
+    cached: bool = False
+    feature_type: str = "topic_summary"
+    graph_version: int | None = None
 
 
 class TopicSearchResult(BaseModel):
@@ -158,7 +165,7 @@ class RelationshipDetailResponse(BaseModel):
     confidence: float
     explanation: str
     evidence: dict = {}
-from pydantic import BaseModel
+
 
 class RecommendationItem(BaseModel):
     topic: str
@@ -173,6 +180,11 @@ class RecommendationItem(BaseModel):
 
 class RecommendationListResponse(BaseModel):
     recommendations: list[RecommendationItem] = []
+    source: str = "rules"
+    stored_source: str | None = None
+    cached: bool = False
+    feature_type: str = "recommendation_reason"
+    graph_version: int | None = None
 
 
 class TopicMasteryResponse(BaseModel):
@@ -193,3 +205,8 @@ class DomainBridgeItem(BaseModel):
 
 class DomainBridgeListResponse(BaseModel):
     bridges: list[DomainBridgeItem] = []
+    source: str = "rules"
+    stored_source: str | None = None
+    cached: bool = False
+    feature_type: str = "bridge_suggestion"
+    graph_version: int | None = None

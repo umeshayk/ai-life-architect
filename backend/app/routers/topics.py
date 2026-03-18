@@ -15,6 +15,8 @@ from app.schemas.graph import GraphResponse
 from app.schemas.topic import (
     KnowledgeSuggestion,
     NextLearningTopic,
+    RecommendationListResponse,
+    RelationshipDetailResponse,
     TopicCleanupResponse,
     TopicCreateRequest,
     TopicCreateResponse,
@@ -27,17 +29,17 @@ from app.schemas.topic import (
     TopicSearchResult,
     TopicSummary,
     TopicSummaryResponse,
-    RelationshipDetailResponse,
 )
 from app.services.graph_service import _topic_group, build_topic_graph_for_user
+from app.services.graph_state_service import bump_user_graph_version
 from app.services.knowledge_expansion_service import suggest_missing_topics
 from app.services.knowledge_gap_service import build_knowledge_gap_suggestions, get_next_learning_topics
-from app.services.retrieval import _extract_item_concepts
-from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
-from app.services.timeline_event_service import build_topic_path_events, log_knowledge_event
-from app.services.relationship_service import get_relationship_detail
-from app.services.topic_summary_service import get_topic_summary
 from app.services.mastery_service import get_topic_mastery
+from app.services.relationship_service import get_relationship_detail
+from app.services.retrieval import _extract_item_concepts
+from app.services.timeline_event_service import build_topic_path_events, log_knowledge_event
+from app.services.topic_service import cleanup_topics, discover_topics, get_topics_with_counts, rebuild_topics_for_user, reassign_topics
+from app.services.topic_summary_service import get_topic_summary
 
 
 router = APIRouter(tags=["topics"])
@@ -82,21 +84,15 @@ def add_topic(payload: TopicCreateRequest, db: Session = Depends(get_db), curren
         raise HTTPException(status_code=400, detail="Topic name is required")
 
     existing = db.scalar(
-        select(Topic).where(
-            Topic.user_id == current_user.id,
-            func.lower(Topic.name) == name.lower(),
-        )
+        select(Topic).where(Topic.user_id == current_user.id, func.lower(Topic.name) == name.lower())
     )
     related_topic = None
     if related_topic_name:
         related_topic = db.scalar(
-            select(Topic).where(
-                Topic.user_id == current_user.id,
-                func.lower(Topic.name) == related_topic_name.lower(),
-            )
+            select(Topic).where(Topic.user_id == current_user.id, func.lower(Topic.name) == related_topic_name.lower())
         )
     if existing is not None:
-        if source == "knowledge_expansion":
+        if source in {"knowledge_expansion", "domain_bridge"}:
             log_knowledge_event(
                 db,
                 user_id=current_user.id,
@@ -108,29 +104,16 @@ def add_topic(payload: TopicCreateRequest, db: Session = Depends(get_db), curren
             )
             db.commit()
         return TopicCreateResponse(
-            topic=TopicSummary(
-                id=existing.id,
-                name=existing.name,
-                count=0,
-                discovery_method="manual",
-                domain=_topic_group(existing.name),
-            ),
+            topic=TopicSummary(id=existing.id, name=existing.name, count=0, discovery_method="manual", domain=_topic_group(existing.name)),
             created=False,
         )
 
     topic = Topic(user_id=current_user.id, name=name, type="standard", level=2)
     db.add(topic)
     db.flush()
-    log_knowledge_event(
-        db,
-        user_id=current_user.id,
-        event_type="topic_created",
-        topic_id=topic.id,
-        source=source,
-        metadata={"topic_name": topic.name},
-    )
+    log_knowledge_event(db, user_id=current_user.id, event_type="topic_created", topic_id=topic.id, source=source, metadata={"topic_name": topic.name})
     build_topic_path_events(db, user_id=current_user.id, topic=topic, source=source)
-    if source == "knowledge_expansion":
+    if source in {"knowledge_expansion", "domain_bridge"}:
         log_knowledge_event(
             db,
             user_id=current_user.id,
@@ -140,30 +123,20 @@ def add_topic(payload: TopicCreateRequest, db: Session = Depends(get_db), curren
             source=source,
             metadata={"topic_name": topic.name, "related_topic_name": related_topic_name or None},
         )
+    bump_user_graph_version(db, current_user.id, topic_name=topic.name, reason="add_topic")
     db.commit()
     db.refresh(topic)
     return TopicCreateResponse(
-        topic=TopicSummary(
-            id=topic.id,
-            name=topic.name,
-            count=0,
-            discovery_method="manual",
-            domain=_topic_group(topic.name),
-        ),
+        topic=TopicSummary(id=topic.id, name=topic.name, count=0, discovery_method="manual", domain=_topic_group(topic.name)),
         created=True,
     )
 
 
 @router.get("/api/topics/search", response_model=list[TopicSearchResult])
-def search_topics(
-    q: str = Query(..., min_length=1),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def search_topics(q: str = Query(..., min_length=1), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     query = q.strip().lower()
     if not query:
         return []
-
     rows = get_topics_with_counts(db, current_user.id)
     matches: list[TopicSearchResult] = []
     for topic, count in rows:
@@ -171,23 +144,8 @@ def search_topics(
         normalized_name = topic_name.lower()
         if query not in normalized_name:
             continue
-        matches.append(
-            TopicSearchResult(
-                id=topic.id,
-                name=topic_name,
-                domain=_topic_group(topic_name),
-                count=count,
-            )
-        )
-
-    matches.sort(
-        key=lambda item: (
-            0 if item.name.lower() == query else 1,
-            0 if item.name.lower().startswith(query) else 1,
-            -item.count,
-            item.name,
-        )
-    )
+        matches.append(TopicSearchResult(id=topic.id, name=topic_name, domain=_topic_group(topic_name), count=count))
+    matches.sort(key=lambda item: (0 if item.name.lower() == query else 1, 0 if item.name.lower().startswith(query) else 1, -item.count, item.name))
     return matches[:8]
 
 
@@ -221,8 +179,6 @@ def get_relationship_details(relationship_id: int, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-
-
 @router.get("/api/topics/{topic_id}/mastery", response_model=TopicMasteryResponse)
 def get_topic_mastery_endpoint(topic_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
@@ -249,19 +205,13 @@ def get_topic_items(topic_id: int, db: Session = Depends(get_db), current_user: 
 
 def _build_topic_detail(topic_name: str, db: Session, current_user: User) -> TopicDetailResponse:
     normalized_topic_name = topic_name.strip().lower()
-    topic = db.scalar(
-        select(Topic).where(
-            Topic.user_id == current_user.id,
-            func.lower(Topic.name) == normalized_topic_name,
-        )
-    )
+    topic = db.scalar(select(Topic).where(Topic.user_id == current_user.id, func.lower(Topic.name) == normalized_topic_name))
     if topic is not None:
         items = db.scalars(
             select(KnowledgeItem)
             .join(ContentTopic, ContentTopic.knowledge_id == KnowledgeItem.id)
             .where(ContentTopic.topic_id == topic.id, KnowledgeItem.user_id == current_user.id)
         ).all()
-
         related_counter: Counter[str] = Counter()
         for item in items:
             sibling_topics = db.scalars(
@@ -272,20 +222,13 @@ def _build_topic_detail(topic_name: str, db: Session, current_user: User) -> Top
             for sibling_topic in sibling_topics:
                 if sibling_topic:
                     related_counter[sibling_topic] += 1
-
-        return TopicDetailResponse(
-            topic=topic.name,
-            topic_id=topic.id,
-            notes=[_build_topic_note_summary(item) for item in items],
-            related_topics=[name for name, _ in related_counter.most_common(5)],
-        )
+        return TopicDetailResponse(topic=topic.name, topic_id=topic.id, notes=[_build_topic_note_summary(item) for item in items], related_topics=[name for name, _ in related_counter.most_common(5)])
 
     items = db.scalars(
         select(KnowledgeItem)
         .options(selectinload(KnowledgeItem.content_topics).selectinload(ContentTopic.topic))
         .where(KnowledgeItem.user_id == current_user.id)
     ).all()
-
     matched_items: list[KnowledgeItem] = []
     related_counter: Counter[str] = Counter()
     for item in items:
@@ -297,16 +240,9 @@ def _build_topic_detail(topic_name: str, db: Session, current_user: User) -> Top
         for concept in concepts:
             if concept.lower() != normalized_topic_name:
                 related_counter[concept] += 1
-
     if not matched_items:
         raise HTTPException(status_code=404, detail="Topic not found")
-
-    return TopicDetailResponse(
-        topic=topic_name,
-        topic_id=None,
-        notes=[_build_topic_note_summary(item) for item in matched_items],
-        related_topics=[name for name, _ in related_counter.most_common(5)],
-    )
+    return TopicDetailResponse(topic=topic_name, topic_id=None, notes=[_build_topic_note_summary(item) for item in matched_items], related_topics=[name for name, _ in related_counter.most_common(5)])
 
 
 @router.get("/api/topics/detail", response_model=TopicDetailResponse)
@@ -322,34 +258,19 @@ def get_topic_by_name(topic_name: str, db: Session = Depends(get_db), current_us
 @router.post("/api/topics/rebuild", response_model=TopicRebuildResponse)
 def rebuild_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     processed_items, topics_created, links_created = rebuild_topics_for_user(db, current_user.id)
-    return TopicRebuildResponse(
-        processed_items=processed_items,
-        topics_created=topics_created,
-        links_created=links_created,
-        discovery_method="discovered",
-    )
+    return TopicRebuildResponse(processed_items=processed_items, topics_created=topics_created, links_created=links_created, discovery_method="discovered")
 
 
 @router.post("/api/topics/discover", response_model=TopicRebuildResponse)
 def discover_user_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     processed_items, topics_created, links_created = discover_topics(db, current_user.id)
-    return TopicRebuildResponse(
-        processed_items=processed_items,
-        topics_created=topics_created,
-        links_created=links_created,
-        discovery_method="discovered",
-    )
+    return TopicRebuildResponse(processed_items=processed_items, topics_created=topics_created, links_created=links_created, discovery_method="discovered")
 
 
 @router.post("/api/topics/reassign", response_model=TopicRebuildResponse)
 def reassign_user_topics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     processed_items, topics_created, links_created = reassign_topics(db, current_user.id)
-    return TopicRebuildResponse(
-        processed_items=processed_items,
-        topics_created=topics_created,
-        links_created=links_created,
-        discovery_method="discovered",
-    )
+    return TopicRebuildResponse(processed_items=processed_items, topics_created=topics_created, links_created=links_created, discovery_method="discovered")
 
 
 @router.post("/api/topics/cleanup", response_model=TopicCleanupResponse)
