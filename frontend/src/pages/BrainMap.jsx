@@ -558,7 +558,7 @@ export default function BrainMap() {
     recommendations: false,
     learningPaths: false,
     gaps: false,
-    bridges: false,
+    bridges: true,
     expansion: false,
     mentor: false,
     details: false
@@ -2128,39 +2128,3 @@ export default function BrainMap() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
