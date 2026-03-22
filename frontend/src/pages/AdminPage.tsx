@@ -1,3 +1,4 @@
+import { ActivityCard } from 'components/layout/ActivityCard';
 import { PageContainer } from 'components/layout/PageContainer';
 import { StatusCard } from 'components/layout/StatusCard';
 import { Breadcrumbs } from 'components/navigation/Breadcrumbs';
@@ -11,28 +12,24 @@ export function AdminPage() {
     >
       <section className="content-grid content-grid--admin">
         <StatusCard />
-        <section className="panel content-card">
-          <div className="panel__header">
-            <div>
-              <h2>Operational checks</h2>
-              <p className="panel__helper-text">Use these checks before enabling more modules in a local or shared environment.</p>
-            </div>
-          </div>
-          <ul className="activity-list">
-            <li className="activity-list__item">
-              <strong>Verify API readiness</strong>
-              <span>Use the readiness endpoint before connecting new workers, jobs, or external tooling.</span>
-            </li>
-            <li className="activity-list__item">
-              <strong>Confirm dependency health</strong>
-              <span>Database and worker status are surfaced here so issues are isolated before users see failures.</span>
-            </li>
-            <li className="activity-list__item">
-              <strong>Review environment configuration</strong>
-              <span>Keep local ports, database credentials, and the configured Ollama model aligned with the documented setup.</span>
-            </li>
-          </ul>
-        </section>
+        <ActivityCard
+          title="Operational checks"
+          helperText="Use these checks before enabling more modules in a local or shared environment."
+          items={[
+            {
+              title: 'Verify API readiness',
+              description: 'Use the readiness endpoint before connecting new workers, jobs, or external tooling.',
+            },
+            {
+              title: 'Confirm dependency health',
+              description: 'Database and worker status are surfaced here so issues are isolated before users see failures.',
+            },
+            {
+              title: 'Review environment configuration',
+              description: 'Keep local ports, database credentials, and the configured Ollama model aligned with the documented setup.',
+            },
+          ]}
+        />
       </section>
     </PageContainer>
   );

@@ -15,6 +15,7 @@ AI Life Architect is an enterprise-grade personal intelligence operating system 
 - Admin route dedicated to operational health and dependency visibility
 - Token-driven themes with `light`, `dark`, `graphite`, and `ocean` modes
 - Shared tooltip, empty state, skeleton, and error-boundary primitives
+- Shared KPI/content/activity/recommendation cards aligned with the component-library spec
 
 ## Project Structure
 

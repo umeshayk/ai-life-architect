@@ -14,10 +14,12 @@ No page bypasses this shell.
 ## UI Foundation
 
 - semantic CSS tokens in `src/styles/foundations/global.css`
+- token values aligned to `SPECS/design-tokens.json` and mapped into theme-aware semantic aliases
 - themes applied at the root token layer
 - light, dark, graphite, and ocean theme modes
 - shared feedback primitives: empty state, skeleton, error boundary
 - shared tooltip primitive for icon actions, badges, and technical affordances
+- shared layout cards for KPI, content, activity, and recommendation surfaces
 
 ## State and Data
 
