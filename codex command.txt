@@ -73,16 +73,60 @@ Rules:
 - Commit and push
 
 
--------------
+-----------
 
-Read AGENTS.md, SPECS/domain-model.md, SPECS/ui-ux-standards.md, SPECS/design-system.md, SPECS/component-library.md, and SPECS/08.1-foundation.md before making changes.
-If this phase includes dashboard work, also read SPECS/dashboard-patterns.md.
+Read AGENTS.md and ALL specification files before making changes:
+
+- SPECS/domain-model.md
+- SPECS/ui-ux-standards.md
+- SPECS/design-system.md
+- SPECS/component-library.md
+- SPECS/dashboard-patterns.md
+- SPECS/design-tokens.json
+- SPECS/08.1-foundation.md
+
+Implement Section 8.X from SPECS/08.1-foundation.md in the current repository.
 
 Use:
 - domain-model.md as authoritative for schema and relationships
 - ui-ux-standards.md for UX behavior
-- design-system.md and design-tokens for styling/layout
-- component-library.md for reuse
-- the phase spec for implementation scope
+- design-system.md + design-tokens.json for layout, styling, and theming
+- component-library.md for reusable components
+- dashboard-patterns.md for dashboard layout (if applicable)
+- the phase spec as the implementation scope
 
-Implement in production quality, run migrations if needed, run lint/typecheck/tests/build, fix issues, update docs, commit, and push.
+Execution rules:
+- Inspect the existing repository first
+- Do NOT rebuild blindly if partial implementation exists
+- Do NOT create placeholder-only code unless explicitly allowed
+- Keep implementation production-grade and cohesive
+- Follow backend service-layer architecture
+- Follow frontend layout + design system strictly
+
+Validation:
+- Run migrations if needed
+- Run lint
+- Run typecheck
+- Run tests
+- Run build
+- Fix ALL issues before finishing
+
+Quality:
+- Ensure loading, empty, error states
+- Ensure responsive behavior (mobile, tablet, desktop, wide)
+- Ensure light + dark theme works
+- Ensure accessibility basics
+
+Docs:
+- Update README and module docs if affected
+
+Final step:
+- Commit with message: "feat: implement section 8.X <section-name>"
+- Push changes
+
+Output format:
+1. Implementation plan
+2. Changes applied
+3. Files changed
+4. Validation results
+5. Final summary
