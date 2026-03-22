@@ -59,12 +59,6 @@ function SidebarContent({
 }) {
   return (
     <div className="sidebar__content">
-      <div className="sidebar__brand">
-        <span className={`sidebar__eyebrow ${collapsed ? 'sidebar__eyebrow--hidden' : ''}`}>
-          Personal intelligence OS
-        </span>
-        <strong className={collapsed ? 'sidebar__brand-title--hidden' : ''}>AI Life Architect</strong>
-      </div>
       <nav className="sidebar__nav">
         {navigationItems.map((item) => {
           const Icon = item.icon;

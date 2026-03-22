@@ -103,19 +103,22 @@ a:focus-visible {
   min-height: 100vh;
 }
 
-.top-header {
+.top-header-shell {
   position: sticky;
   top: 0;
   z-index: 40;
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(14px);
+}
+
+.top-header {
   height: var(--header-height);
   display: grid;
   grid-template-columns: minmax(14rem, 20rem) minmax(16rem, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
   padding: 0 var(--space-3);
-  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
-  border-bottom: 1px solid var(--color-border);
-  backdrop-filter: blur(14px);
 }
 
 .top-header__left,
@@ -123,6 +126,19 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.top-header__desktop-actions,
+.top-header__mobile-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.top-header__mobile-actions,
+.mobile-search-panel,
+.mobile-actions-sheet {
+  display: none;
 }
 
 .top-header__center {
@@ -153,14 +169,12 @@ a:focus-visible {
   font-weight: 700;
 }
 
-.top-header__brand strong,
-.sidebar__brand strong {
+.top-header__brand strong {
   display: block;
   font-size: 0.95rem;
 }
 
-.top-header__brand small,
-.sidebar__eyebrow {
+.top-header__brand small {
   color: var(--color-text-soft);
   font-size: 0.75rem;
 }
@@ -196,6 +210,32 @@ a:focus-visible {
   font-size: 0.75rem;
 }
 
+.mobile-search-panel {
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.mobile-search-panel__bar {
+  width: 100%;
+}
+
+.mobile-actions-sheet {
+  padding: 0 var(--space-2) var(--space-2);
+  gap: 0.5rem;
+}
+
+.mobile-actions-sheet__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: var(--control-height);
+  padding: 0 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
 .app-shell__body {
   display: grid;
   grid-template-columns: minmax(17rem, 19rem) 1fr;
@@ -228,17 +268,6 @@ a:focus-visible {
   gap: 0.5rem;
 }
 
-.sidebar__brand {
-  min-height: 2.75rem;
-}
-
-.sidebar--collapsed .sidebar__brand {
-  display: grid;
-  place-items: center;
-}
-
-.sidebar__eyebrow--hidden,
-.sidebar__brand-title--hidden,
 .sidebar__link-content--hidden {
   display: none;
 }
@@ -497,6 +526,12 @@ a:focus-visible {
   background: var(--color-surface-muted);
 }
 
+.page-cta-button {
+  min-width: 14rem;
+  justify-content: center;
+  white-space: nowrap;
+}
+
 .icon-button {
   position: relative;
   width: var(--control-height);
@@ -644,11 +679,6 @@ a:focus-visible {
     grid-template-columns: 1fr auto;
   }
 
-  .top-header__center {
-    grid-column: 1 / -1;
-    order: 3;
-  }
-
   .top-header__menu {
     display: inline-flex;
   }
@@ -666,11 +696,16 @@ a:focus-visible {
     position: fixed;
     inset: 0;
     z-index: 60;
+    opacity: 0;
     pointer-events: none;
+    visibility: hidden;
+    transition: opacity var(--transition-base), visibility var(--transition-base);
   }
 
   .sidebar-drawer--open {
+    opacity: 1;
     pointer-events: auto;
+    visibility: visible;
   }
 
   .sidebar-drawer__backdrop {
@@ -678,6 +713,12 @@ a:focus-visible {
     inset: 0;
     border: 0;
     background: rgb(15 23 42 / 0.45);
+    opacity: 0;
+    transition: opacity var(--transition-base);
+  }
+
+  .sidebar-drawer--open .sidebar-drawer__backdrop {
+    opacity: 1;
   }
 
   .sidebar--mobile {
@@ -713,12 +754,28 @@ a:focus-visible {
 @media (max-width: 767px) {
   .top-header {
     padding: 0 var(--space-2);
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
+  .top-header__center,
+  .top-header__desktop-actions,
   .top-header__brand div,
   .button--secondary span,
   .search-bar kbd {
     display: none;
+  }
+
+  .top-header__mobile-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .mobile-search-panel--open {
+    display: block;
+  }
+
+  .mobile-actions-sheet--open {
+    display: grid;
   }
 
   .app-shell__main {
@@ -727,5 +784,9 @@ a:focus-visible {
 
   .page-header {
     flex-direction: column;
+  }
+
+  .page-cta-button {
+    min-width: 100%;
   }
 }

@@ -14,7 +14,7 @@ export function DashboardPage() {
       title="Executive dashboard"
       description="Track execution health, active priorities, and platform readiness from a single operational workspace."
       breadcrumbs={<Breadcrumbs items={[{ label: 'Workspace', to: '/' }, { label: 'Dashboard' }]} />}
-      actions={<button className="button button--primary">Review recommendations</button>}
+      actions={<button className="button button--primary page-cta-button">Review recommendations</button>}
     >
       <section className="kpi-grid">
         {kpis.map((kpi) => (
