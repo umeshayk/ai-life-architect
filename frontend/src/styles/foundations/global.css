@@ -463,6 +463,12 @@ a:focus-visible {
   margin: 0;
 }
 
+.field-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 .panel__label {
   margin: 0;
   color: var(--color-text-soft);
@@ -644,6 +650,11 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.icon-button--sm {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .icon-button__badge {

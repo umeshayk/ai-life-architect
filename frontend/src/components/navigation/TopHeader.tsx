@@ -84,31 +84,39 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
             </Tooltip>
           </div>
           <div className="top-header__mobile-actions">
-            <button
-              className="icon-button"
-              type="button"
-              aria-label="Toggle search"
-              aria-expanded={mobileSearchOpen}
-              onClick={() => setMobileSearchOpen((current) => !current)}
-            >
-              <Search size={18} />
-            </button>
-            <button className="icon-button" type="button" aria-label="Notifications">
-              <Bell size={18} />
-              <span className="icon-button__badge">3</span>
-            </button>
-            <button className="icon-button" type="button" aria-label="Profile menu">
-              <UserCircle2 size={20} />
-            </button>
-            <button
-              className="icon-button"
-              type="button"
-              aria-label="More actions"
-              aria-expanded={mobileActionsOpen}
-              onClick={() => setMobileActionsOpen((current) => !current)}
-            >
-              <Ellipsis size={18} />
-            </button>
+            <Tooltip content="Open global search and command discovery.">
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Toggle search"
+                aria-expanded={mobileSearchOpen}
+                onClick={() => setMobileSearchOpen((current) => !current)}
+              >
+                <Search size={18} />
+              </button>
+            </Tooltip>
+            <Tooltip content="Review unread alerts and reminders that need attention.">
+              <button className="icon-button" type="button" aria-label="Notifications">
+                <Bell size={18} />
+                <span className="icon-button__badge">3</span>
+              </button>
+            </Tooltip>
+            <Tooltip content="Open profile and workspace settings.">
+              <button className="icon-button" type="button" aria-label="Profile menu">
+                <UserCircle2 size={20} />
+              </button>
+            </Tooltip>
+            <Tooltip content="Open secondary mobile actions like create, assistant, and theme.">
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="More actions"
+                aria-expanded={mobileActionsOpen}
+                onClick={() => setMobileActionsOpen((current) => !current)}
+              >
+                <Ellipsis size={18} />
+              </button>
+            </Tooltip>
           </div>
         </div>
       </header>

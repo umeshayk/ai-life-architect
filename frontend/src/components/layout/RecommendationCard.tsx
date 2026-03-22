@@ -1,3 +1,4 @@
+import { Tooltip } from 'components/feedback/Tooltip';
 import type { ReactNode } from 'react';
 
 import { ContentCard } from 'components/layout/ContentCard';
@@ -6,6 +7,7 @@ type RecommendationCardProps = {
   title: string;
   helperText?: string;
   badge?: string;
+  badgeTooltip?: string;
   emptyTitle: string;
   emptyDescription: string;
   action?: ReactNode;
@@ -15,6 +17,7 @@ export function RecommendationCard({
   title,
   helperText,
   badge,
+  badgeTooltip,
   emptyTitle,
   emptyDescription,
   action,
@@ -24,7 +27,13 @@ export function RecommendationCard({
       title={title}
       helperText={helperText}
       className="recommendation-card"
-      actions={badge ? <span className="badge badge--neutral">{badge}</span> : null}
+      actions={
+        badge ? (
+          <Tooltip content={badgeTooltip ?? `${title} currently has no active items requiring review.`}>
+            <span className="badge badge--neutral">{badge}</span>
+          </Tooltip>
+        ) : null
+      }
     >
       <div className="empty-panel-state empty-panel-state--compact">
         <h3>{emptyTitle}</h3>

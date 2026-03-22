@@ -149,4 +149,15 @@ describe('app shell foundation', () => {
     expect(screen.getByRole('heading', { name: "Today's focus" })).toBeInTheDocument();
     expect(screen.queryByText('Platform health')).not.toBeInTheDocument();
   });
+
+  it('shows tooltip support for dashboard metrics and settings controls', () => {
+    renderWithProviders(<DashboardPage />);
+
+    fireEvent.mouseEnter(screen.getByText('Active goals'));
+    expect(screen.getByRole('tooltip', { name: /tracks goals that are active/i })).toBeInTheDocument();
+
+    renderWithProviders(<SettingsPage />);
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /theme mode help/i }));
+    expect(screen.getByRole('tooltip', { name: /changes the visual theme/i })).toBeInTheDocument();
+  });
 });
