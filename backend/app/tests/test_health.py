@@ -1,28 +1,32 @@
+from __future__ import annotations
+
 from fastapi.testclient import TestClient
 
-from app.main import app
 
-
-client = TestClient(app)
-
-
-def test_health_check_uses_standard_contract():
-    response = client.get("/api/v1/health")
+def test_live_health_returns_success(client: TestClient) -> None:
+    response = client.get("/api/v1/health/live")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is True
-    assert payload["error"] is None
-    assert payload["data"]["status"] == "OK"
-    assert payload["data"]["ports"]["backend"] == 8004
-    assert payload["meta"] == {}
+    assert payload["data"]["status"] == "healthy"
+    assert response.headers["x-request-id"]
 
 
-def test_readiness_check_includes_foundation_dependencies():
-    response = client.get("/api/v1/health/readiness")
+def test_ready_health_returns_dependency_details(client: TestClient) -> None:
+    response = client.get("/api/v1/health/ready", headers={"x-request-id": "test-request"})
 
-    assert response.status_code == 200
+    assert response.status_code in {200, 503}
     payload = response.json()
     assert payload["success"] is True
-    assert payload["data"]["dependencies"]["database"]["status"] == "CONFIGURED"
-    assert payload["data"]["dependencies"]["ollama"]["model"] == "phi3:mini"
+    assert payload["data"]["request_id"] == "test-request"
+    dependency_names = {dependency["name"] for dependency in payload["data"]["dependencies"]}
+    assert {"database", "worker", "ai_provider"}.issubset(dependency_names)
+
+
+def test_health_details_returns_structured_response(client: TestClient) -> None:
+    response = client.get("/api/v1/health/details")
+
+    assert response.status_code in {200, 503}
+    payload = response.json()
+    assert set(payload.keys()) == {"success", "data", "error", "meta"}

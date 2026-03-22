@@ -178,6 +178,236 @@ The platform should support these major domains:
 
 ## 5A. Frontend Design System, Responsiveness, and Theme Standards
 
+## 5A.1 Global Layout System (Mandatory)
+## 5A.2 Color System (Mandatory)
+
+All UI must use predefined color tokens. No hardcoded colors allowed.
+
+### Primary Palette
+
+Primary:
+- #2563EB (default)
+- #1D4ED8 (hover)
+- #1E40AF (active)
+
+Neutral:
+- #F9FAFB (bg)
+- #F3F4F6
+- #E5E7EB
+- #D1D5DB
+- #6B7280
+- #374151
+- #111827 (text)
+
+### Semantic Colors
+
+- Success: #16A34A
+- Warning: #F59E0B
+- Error: #DC2626
+- Info: #0EA5E9
+
+### Dark Theme
+
+- Background: #121212
+- Surface: #1E1E1E
+- Border: #30363D
+- Text: #E5E7EB
+
+### Rules
+
+- No random hex usage
+- Follow semantic mapping
+- Use tokens only
+
+## 5A.3 Typography System (Mandatory)
+
+### Font
+
+Primary: Inter  
+Fallback: system-ui, Segoe UI, Roboto  
+
+Monospace: JetBrains Mono  
+
+### Scale
+
+- H1: 32px
+- H2: 24px
+- H3: 20px
+- Body: 16px
+- Small: 14px
+- Caption: 12px
+
+### Weights
+
+- Regular: 400
+- Medium: 500
+- Semibold: 600
+- Bold: 700
+
+### Rules
+
+- Use Inter everywhere
+- No multiple fonts
+- Maintain readability
+
+## 🤖 Codex Color & Typography Enforcement
+
+Codex MUST:
+
+- Use only defined color tokens
+- Use Inter font
+- Apply semantic colors correctly
+- Support light/dark themes
+
+Reject implementation if:
+- random colors used
+- inconsistent fonts
+
+
+This section defines the canonical layout system for the entire application.
+All frontend implementations MUST follow this system.
+
+---
+
+### 🌐 Global App Layout Architecture
+
+Every page must be rendered inside a shared AppLayout.
+
+Structure:
+
+AppLayout
+ ├── TopHeader (sticky)
+ ├── Sidebar (responsive navigation)
+ ├── MainContent
+ │     ├── PageHeader
+ │     ├── PageBody
+ │     └── FooterActions (optional)
+ └── RightPanel (optional contextual panel)
+
+Rules:
+- Do not create independent layouts per page
+- Do not bypass AppLayout
+- Layout must be compositional and reusable
+- No hardcoded layout wrappers inside feature pages
+
+---
+
+### 🧱 Layout Composition Rules
+
+- Layout must be built using:
+  - CSS Grid (for macro layout)
+  - Flexbox (for internal alignment)
+- Avoid:
+  - fixed pixel widths
+  - absolute positioning for core layout
+- Use container-based responsive layouts:
+  - minmax()
+  - clamp()
+  - fluid widths
+
+---
+
+### 📱 Responsive Layout Behavior
+
+Breakpoints:
+
+- Mobile: < 768px
+- Tablet: 768px – 1024px
+- Desktop: > 1024px
+- Wide Desktop: > 1440px
+
+Behavior:
+
+Sidebar:
+- Desktop → visible
+- Tablet → collapsible
+- Mobile → hidden (drawer via hamburger)
+
+Header:
+- always sticky
+- must not overlap content
+
+Main Content:
+- full width on mobile
+- constrained max-width on large screens
+
+Right Panel:
+- visible only on desktop
+- collapses into drawer on tablet/mobile
+
+---
+
+### 📄 Page Layout Templates (Reusable Patterns)
+
+All pages must follow one of the approved templates:
+
+#### Dashboard Layout
+- KPI Row
+- Insights Grid
+- Activity / Recommendations Panel
+
+#### List Layout
+- Filter Toolbar
+- Data Table / List
+- Optional Right Detail Panel
+
+#### Detail Layout
+- Page Header
+- Metadata Section
+- Tabbed Content
+- Side Info Panel
+
+#### Builder Layout
+- Left → Rule Tree / Navigation
+- Center → Main Work Area
+- Right → Validation / Insights Panel
+
+#### Form Layout
+- Top → Title + Actions
+- Middle → Sectioned Form
+- Bottom → Sticky Action Bar
+
+Rules:
+- Do not invent new layout types without updating AGENTS.md
+- Prefer reuse over creativity
+
+---
+
+### 🎨 UI Composition Rules
+
+- Prefer flat layout over excessive card nesting
+- Use cards only for logical grouping, not decoration
+- Maintain consistent spacing using token scale (8px system)
+- Align all content to shared grid system
+
+---
+
+### 🌙 Theme System Enforcement
+
+Themes must be applied through tokens only.
+
+Do NOT:
+- hardcode colors
+- override styles per page
+
+---
+
+### 🔄 Layout Modes
+
+- Learning Mode
+- Professional Mode
+- Builder Mode
+
+---
+
+### 🤖 Codex Layout Enforcement Rules
+
+- Always use AppLayout
+- Reuse approved templates
+- Validate responsiveness across devices
+- Validate themes
+
+
 The frontend must behave like a modern enterprise SaaS product on every major device size.
 
 ### Required device support
@@ -785,6 +1015,91 @@ The generated frontend layout must follow these rules exactly:
   - sticky top header for global actions, search, notifications, and profile
 - do not allow each page to invent its own layout pattern
 - keep navigation, spacing, sizing, and page structure consistent across modules
+
+
+
+#### A1. Header Content Definition (Mandatory)
+
+The Top Header (TopNav) must be consistent across all pages.
+
+##### Left Section (Identity + Navigation Context)
+Must include:
+- App logo or product name (click navigates to dashboard)
+- Current workspace or context selector if multi-workspace is enabled
+
+Optional:
+- Breadcrumb if not shown in the page header
+
+##### Center Section (Primary Interaction)
+Must include:
+- Global search bar
+
+Behavior:
+- supports entity search
+- supports command palette trigger (Ctrl+K)
+- supports quick navigation
+- expandable on desktop
+- full-width or overlay behavior on mobile
+
+##### Right Section (Actions + User Controls)
+Must include:
+- Command palette trigger
+- Quick create button
+- Notifications icon with unread badge
+- AI assistant entry
+- Theme toggle
+- User profile menu
+
+Quick create must support:
+- task
+- goal
+- note
+- project
+
+User profile menu should include:
+- profile
+- settings
+- logout
+
+##### Mobile Behavior
+On mobile, collapse header into:
+- left: hamburger + logo
+- right: search, notifications, profile
+
+Optional:
+- move create action into FAB or overflow menu if space is limited
+
+##### Header Behavior Rules
+- Header must be sticky
+- Header height must remain consistent across pages
+- Header must not wrap into multiple rows unless explicitly designed for a small breakpoint
+- Header must remain usable on mobile, tablet, desktop, and wide desktop
+
+##### Anti-Patterns
+Do not:
+- overload the header with page-specific actions
+- change header structure per page
+- hide critical actions several levels deep
+- duplicate page action bar responsibilities inside the top header
+
+##### Styling Rules
+- Background:
+  - light theme: surface or white
+  - dark theme: dark surface token
+- Border:
+  - subtle bottom border only
+- Standard height:
+  - 56px to 64px
+- Spacing:
+  - token-driven only
+
+##### Codex Header Rules
+Codex MUST:
+- implement header as reusable TopHeader component
+- keep header structure consistent across pages
+- ensure responsive behavior
+- integrate header with command palette, notifications, assistant, theme toggle, and user menu
+- avoid page-specific header variants unless explicitly approved in AGENTS.md
 
 #### B. Responsive Breakpoints
 Design and test for all of these viewport groups:

@@ -1,1 +1,1 @@
-"""Versioned API routes."""
+"""Version 1 API package."""

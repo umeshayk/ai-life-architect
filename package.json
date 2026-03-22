@@ -1,0 +1,11 @@
+{
+  "name": "ai-life-architect",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "lint": "npm --prefix frontend run lint && backend\\.venv\\Scripts\\python -m ruff check backend\\app && backend\\.venv\\Scripts\\python -m mypy backend\\app",
+    "typecheck": "npm --prefix frontend run typecheck && backend\\.venv\\Scripts\\python -m mypy backend\\app",
+    "test": "npm --prefix frontend run test && npm --prefix frontend run test:e2e && backend\\.venv\\Scripts\\python -m pytest backend\\app\\tests",
+    "build": "npm --prefix frontend run build"
+  }
+}

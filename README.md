@@ -1,161 +1,169 @@
 # AI Life Architect
 
-AI Life Architect is an enterprise-grade personal intelligence operating system in progress. Phase 1 establishes the runnable foundation: FastAPI backend, React/Vite frontend, standard API envelope, responsive app shell, token-based theming, local environment configuration, and baseline tests.
+AI Life Architect is an enterprise-grade personal intelligence operating system built with FastAPI, React, PostgreSQL, Redis, Celery, and Ollama-ready AI abstractions. This foundation implements Section 8.1 of the product specification with a production-quality monorepo structure, health checks, responsive frontend app shell, local and Docker workflows, testing, and architecture documentation.
 
-## Phase 1 Deliverables
+## Stack
 
-- FastAPI backend on `8004`
-- React + Vite frontend on `5176`
-- Standard `success/data/error/meta` API response contract
-- Health and readiness endpoints
-- Responsive enterprise app shell
-- Light, dark, ocean, and graphite themes
-- Local environment defaults for PostgreSQL, Redis, and Ollama
-- Backend and frontend smoke tests
+- Frontend: React, TypeScript, Vite, React Router, TanStack Query, Zustand, React Hook Form, Zod, Vitest, Testing Library
+- Backend: FastAPI, SQLAlchemy 2.x, Alembic, Pydantic Settings, PostgreSQL, pgvector-ready bootstrap, Redis, Celery, Pytest
+- Infrastructure: Docker Compose, `.env`-driven configuration, Ruff, Mypy, ESLint, TypeScript, Playwright
 
-## Environment Defaults
+## Project Structure
 
-- PostgreSQL user password: `root`
-- PostgreSQL database: `ai_life_architect`
-- Backend port: `8004`
-- Frontend port: `5176`
-- Ollama model: `phi3:mini`
-
-## Local Setup Without Docker
-
-### 1. Clone the repository
-
-```powershell
-git clone https://github.com/umeshayk/ai-life-architect.git
-cd ai-life-architect
+```text
+backend/
+  app/
+    api/v1
+    core
+    db
+    models
+    modules
+    schemas
+    services
+    tests
+    utils
+    workers
+frontend/
+  src/
+    app
+    components
+    features
+    layouts
+    pages
+    routes
+    services
+    store
+    styles
+docs/
+  architecture
+  development
 ```
 
-### 2. Install PostgreSQL and create the database
+## Environment Files
 
-Use PostgreSQL 15+ locally. Ensure the `postgres` user password is `root` and create the requested database:
+1. Copy `backend/.env.example` to `backend/.env`
+2. Copy `frontend/.env.example` to `frontend/.env`
+3. Keep these required values:
+   - PostgreSQL password: `root`
+   - Database name: `ai_life_architect`
+   - Backend port: `8004`
+   - Frontend port: `5176`
+   - `OLLAMA_MODEL=phi3:mini`
+
+## Run With Docker
+
+```bash
+docker compose up --build
+```
+
+Important endpoints:
+
+- Frontend: `http://localhost:5176`
+- Backend API: `http://localhost:8004`
+- API docs: `http://localhost:8004/docs`
+- Liveness: `http://localhost:8004/api/v1/health/live`
+- Readiness: `http://localhost:8004/api/v1/health/ready`
+
+## Run Locally Without Docker
+
+Detailed step-by-step instructions are also documented in [docs/development/local-setup.md](/c:/projects/ai-life-architect/docs/development/local-setup.md).
+
+### 1. Install prerequisites
+
+- Python 3.12+
+- Node.js 20+
+- PostgreSQL 16+
+- Redis 7+
+- Ollama installed locally if you want live model availability
+
+### 2. Create the PostgreSQL database
 
 ```sql
-ALTER USER postgres WITH PASSWORD 'root';
 CREATE DATABASE ai_life_architect;
 ```
 
-Equivalent commands:
+Ensure the PostgreSQL superuser or application user password is `root`.
 
-```powershell
-psql -U postgres -h localhost -c "ALTER USER postgres WITH PASSWORD 'root';"
-psql -U postgres -h localhost -c "CREATE DATABASE ai_life_architect;"
-```
+### 3. Backend setup
 
-### 3. Install Redis locally
-
-Run Redis at:
-
-```text
-redis://localhost:6379/0
-```
-
-### 4. Install Ollama and pull the configured model
-
-```powershell
-ollama pull phi3:mini
-ollama run phi3:mini
-```
-
-Keep Ollama available at `http://localhost:11434`.
-
-### 5. Configure the backend
-
-```powershell
-Copy-Item backend\.env.example backend\.env
-```
-
-The backend `.env` is already configured with:
-
-```env
-POSTGRES_PASSWORD=root
-POSTGRES_DB=ai_life_architect
-BACKEND_PORT=8004
-OLLAMA_MODEL=phi3:mini
-FRONTEND_ORIGIN=http://localhost:5176
-```
-
-### 6. Create the Python environment and install dependencies
-
-```powershell
+```bash
 cd backend
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-### 7. Run backend tests
-
-```powershell
-python -m pytest -q
-```
-
-### 8. Start the backend
-
-```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\activate
+pip install -e .[dev]
+copy .env.example .env
+alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8004
 ```
 
-Useful URLs:
+### 4. Worker setup
 
-- `http://localhost:8004/docs`
-- `http://localhost:8004/api/v1/health`
-- `http://localhost:8004/api/v1/health/readiness`
+In a second terminal:
 
-### 9. Configure the frontend
+```bash
+cd backend
+.venv\Scripts\activate
+celery -A app.workers.celery_app:celery_app worker --loglevel=INFO
+```
 
-Open a second terminal:
+### 5. Frontend setup
 
-```powershell
+```bash
 cd frontend
-Copy-Item .env.example .env
 npm install
+copy .env.example .env
+npm run dev -- --host 0.0.0.0 --port 5176
 ```
 
-### 10. Run frontend tests
+## Database and Migration Commands
 
-```powershell
-npm test
+```bash
+cd backend
+alembic upgrade head
+alembic revision --autogenerate -m "message"
+alembic downgrade -1
 ```
 
-### 11. Start the frontend
+## Quality Commands
 
-```powershell
-npm run dev
-```
+### Root shortcuts
 
-Open `http://localhost:5176`.
-
-### 12. Validate the Phase 1 foundation locally
-
-1. Confirm `/api/v1/health` returns the standard success envelope.
-2. Open the dashboard and the `Foundation Health` page.
-3. Switch between `light`, `dark`, `ocean`, and `graphite` themes.
-4. Verify responsive behavior at mobile, tablet, desktop, and wide desktop widths.
-5. Confirm the health page shows loading, error, and empty-safe states.
-
-## Commands
-
-### Backend
-
-```powershell
-python -m pytest -q
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8004
-```
-
-### Frontend
-
-```powershell
-npm test
+```bash
+npm run lint
+npm run typecheck
+npm run test
 npm run build
-npm run dev
 ```
+
+`npm run test` executes frontend unit tests, the Playwright smoke e2e path, and backend pytest health checks.
+
+### Backend only
+
+```bash
+cd backend
+ruff check .
+mypy app
+pytest
+```
+
+### Frontend only
+
+```bash
+cd frontend
+npm run lint
+npm run typecheck
+npm run test
+npm run test:e2e
+npm run build
+```
+
+## Seed and Demo Hooks
+
+The repository includes `backend/app/services/seed_service.py` as a controlled seed entry point for future local demo data. It currently bootstraps system metadata only and intentionally avoids fake business-domain records.
 
 ## Documentation
 
-- [Architecture Overview](docs/architecture.md)
-- [Development Workflow](docs/development.md)
+- [Architecture Overview](/c:/projects/ai-life-architect/docs/architecture/overview.md)
+- [Backend Architecture](/c:/projects/ai-life-architect/docs/architecture/backend.md)
+- [Frontend Architecture](/c:/projects/ai-life-architect/docs/architecture/frontend.md)
+- [Local Setup](/c:/projects/ai-life-architect/docs/development/local-setup.md)
