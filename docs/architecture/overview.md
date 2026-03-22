@@ -25,5 +25,6 @@ AI Life Architect uses a clean multi-app repository structure with strongly sepa
 - Structured logging and correlation IDs
 - Health endpoints with readiness dependency reporting
 - Alembic migration baseline with pgvector preparation
-- Theme-token-driven frontend with light, dark, and premium graphite modes
+- Theme-token-driven frontend with light, dark, graphite, and ocean modes
+- User-facing dashboard surfaces separated from admin-only operational visibility
 - Testable frontend and backend entry points

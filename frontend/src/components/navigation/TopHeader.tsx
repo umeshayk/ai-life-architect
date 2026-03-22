@@ -61,7 +61,7 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
                 <span>Quick create</span>
               </button>
             </Tooltip>
-            <Tooltip content="View notifications">
+            <Tooltip content="Review unread alerts and reminders that need attention.">
               <button className="icon-button" type="button" aria-label="Notifications">
                 <Bell size={18} />
                 <span className="icon-button__badge">3</span>
@@ -72,7 +72,7 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
                 <BrainCircuit size={18} />
               </button>
             </Tooltip>
-            <Tooltip content={`Switch theme from ${theme}`}>
+            <Tooltip content={`Switch to the next workspace-safe theme after ${theme}.`}>
               <button className="icon-button" type="button" aria-label={`Switch theme, current theme ${theme}`} onClick={cycleTheme}>
                 <MoonStar size={18} />
               </button>

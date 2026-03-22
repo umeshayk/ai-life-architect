@@ -8,6 +8,14 @@ AI Life Architect is an enterprise-grade personal intelligence operating system 
 - Backend: FastAPI, SQLAlchemy 2.x, Alembic, Pydantic Settings, PostgreSQL, pgvector-ready bootstrap, Redis, Celery, Pytest
 - Infrastructure: Docker Compose, `.env`-driven configuration, Ruff, Mypy, ESLint, TypeScript, Playwright
 
+## Foundation UX Baseline
+
+- Shared enterprise app shell with sticky top header, responsive sidebar, breadcrumbs, and page containers
+- User dashboard focused on goals, work intake, schedule context, and recommendations instead of developer/status copy
+- Admin route dedicated to operational health and dependency visibility
+- Token-driven themes with `light`, `dark`, `graphite`, and `ocean` modes
+- Shared tooltip, empty state, skeleton, and error-boundary primitives
+
 ## Project Structure
 
 ```text

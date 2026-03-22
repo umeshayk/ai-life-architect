@@ -1,9 +1,9 @@
-Read AGENTS.md and SPECS/08.1-foundation.md.
+Read Read AGENTS.md, SPECS/domain-model.md, SPECS/ui-ux-standards.md, and SPECS/08.1-foundation.md.
 Implement Section 8.1 completely in production quality.
 
 Rules:
 - Follow AGENTS.md architecture, UI, responsiveness, and theming rules.
-- Follow UI/UX Standards from AGENTS.md strictly, including tooltips, form design, validation, responsiveness, and theming.
+- ui-ux-standards.md for UI/UX rules
 - Do not create dummy or placeholder implementations.
 - Ensure backend, frontend, Docker, env, health checks, and docs are complete.
 - Run lint, typecheck, tests, and build.
@@ -18,7 +18,7 @@ git url - https://github.com/umeshayk/ai-life-architect.git
 
 -----
 
-Read AGENTS.md and SPECS/08.2-auth-rbac.md.
+Read Read AGENTS.md, SPECS/domain-model.md, SPECS/ui-ux-standards.md, and SPECS/08.2-auth-rbac.md.
 Implement Section 8.2 completely.
 
 Rules:
@@ -33,7 +33,7 @@ Rules:
 
 -----
 
-Read AGENTS.md, SPECS/domain-model.md, and SPECS/08.3-core-domain.md.
+Read Read AGENTS.md, SPECS/domain-model.md, SPECS/ui-ux-standards.md, and SPECS/08.3-core-domain.md.
 
 Use domain-model.md as the SINGLE SOURCE OF TRUTH for:
 - database schema
@@ -44,6 +44,8 @@ Use domain-model.md as the SINGLE SOURCE OF TRUTH for:
 Implement Section 8.3 completely.
 
 Rules:
+- domain-model.md for schema and relationships
+- ui-ux-standards.md for UI/UX rules
 - Do NOT invent random fields outside domain-model unless required.
 - Ensure relationships strictly follow domain-model.
 - Add filtering, sorting, pagination.

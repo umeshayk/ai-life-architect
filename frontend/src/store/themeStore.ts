@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ThemeMode = 'light' | 'dark' | 'graphite';
+export type ThemeMode = 'light' | 'dark' | 'graphite' | 'ocean';
 
 type ThemeState = {
   theme: ThemeMode;
@@ -8,7 +8,7 @@ type ThemeState = {
   cycleTheme: () => void;
 };
 
-const orderedThemes: ThemeMode[] = ['light', 'dark', 'graphite'];
+const orderedThemes: ThemeMode[] = ['light', 'dark', 'graphite', 'ocean'];
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
   theme: 'light',

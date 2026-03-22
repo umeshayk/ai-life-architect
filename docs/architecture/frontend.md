@@ -15,8 +15,9 @@ No page bypasses this shell.
 
 - semantic CSS tokens in `src/styles/foundations/global.css`
 - themes applied at the root token layer
-- light, dark, and graphite theme modes
+- light, dark, graphite, and ocean theme modes
 - shared feedback primitives: empty state, skeleton, error boundary
+- shared tooltip primitive for icon actions, badges, and technical affordances
 
 ## State and Data
 
@@ -26,8 +27,8 @@ No page bypasses this shell.
 
 ## Route Baseline
 
-- `/`: executive dashboard shell
-- `/admin`: admin foundation route
+- `/`: executive dashboard shell with user-facing empty, KPI, and recommendation states
+- `/admin`: admin route for health and operational visibility
 - `/settings`: settings route with theme controls
 
 This provides a durable base for later feature modules without revisiting core shell decisions.

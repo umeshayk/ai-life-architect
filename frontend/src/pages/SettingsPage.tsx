@@ -2,7 +2,7 @@ import { PageContainer } from 'components/layout/PageContainer';
 import { Breadcrumbs } from 'components/navigation/Breadcrumbs';
 import { useThemeStore, type ThemeMode } from 'store/themeStore';
 
-const themeOptions: ThemeMode[] = ['light', 'dark', 'graphite'];
+const themeOptions: ThemeMode[] = ['light', 'dark', 'graphite', 'ocean'];
 
 export function SettingsPage() {
   const theme = useThemeStore((state) => state.theme);
@@ -16,7 +16,10 @@ export function SettingsPage() {
     >
       <section className="panel">
         <div className="panel__header">
-          <h2>Theme mode</h2>
+          <div>
+            <h2>Theme mode</h2>
+            <p className="panel__helper-text">Apply workspace-safe display themes without changing page-level layouts.</p>
+          </div>
         </div>
         <div className="segmented-control" role="group" aria-label="Theme mode">
           {themeOptions.map((option) => (

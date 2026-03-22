@@ -267,6 +267,18 @@ Reject implementation if:
 This section defines the canonical layout system for the entire application.
 All frontend implementations MUST follow this system.
 
+## External Specifications (Mandatory)
+
+In addition to this document, Codex MUST read and follow:
+
+- SPECS/domain-model.md → authoritative data model
+- SPECS/ui-ux-standards.md → UI/UX rules and design system
+
+These files are REQUIRED for implementation.
+If there is any conflict:
+- domain-model.md overrides schema decisions
+- ui-ux-standards.md overrides UI decisions
+
 # UI/UX Standards (Mandatory)
 
 All frontend implementations must strictly follow these standards. No exceptions.

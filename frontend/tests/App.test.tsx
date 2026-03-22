@@ -5,6 +5,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { AppLayout } from 'layouts/AppLayout';
+import { DashboardPage } from 'pages/DashboardPage';
 import { SettingsPage } from 'pages/SettingsPage';
 import { useThemeStore } from 'store/themeStore';
 
@@ -115,9 +116,9 @@ describe('app shell foundation', () => {
   it('switches theme from settings controls', () => {
     renderWithProviders(<SettingsPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'dark' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ocean' }));
 
-    expect(useThemeStore.getState().theme).toBe('dark');
+    expect(useThemeStore.getState().theme).toBe('ocean');
   });
 
   it('shows a tooltip for header icon actions', () => {
@@ -139,6 +140,13 @@ describe('app shell foundation', () => {
 
     fireEvent.mouseEnter(screen.getAllByRole('button', { name: /notifications/i })[0]);
 
-    expect(screen.getByRole('tooltip', { name: /view notifications/i })).toBeInTheDocument();
+    expect(screen.getByRole('tooltip', { name: /review unread alerts and reminders/i })).toBeInTheDocument();
+  });
+
+  it('keeps operational health out of the user dashboard surface', () => {
+    renderWithProviders(<DashboardPage />);
+
+    expect(screen.getByRole('heading', { name: "Today's focus" })).toBeInTheDocument();
+    expect(screen.queryByText('Platform health')).not.toBeInTheDocument();
   });
 });
