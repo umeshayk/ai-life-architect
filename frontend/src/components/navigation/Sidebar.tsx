@@ -25,15 +25,19 @@ const navigationItems: NavigationItem[] = [
 ];
 
 type SidebarProps = {
+  desktopCollapsed: boolean;
   mobileOpen: boolean;
   onClose: () => void;
 };
 
-export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
+export function Sidebar({ desktopCollapsed, mobileOpen, onClose }: SidebarProps) {
   return (
     <>
-      <aside className="sidebar sidebar--desktop" aria-label="Primary navigation">
-        <SidebarContent />
+      <aside
+        className={`sidebar sidebar--desktop ${desktopCollapsed ? 'sidebar--collapsed' : ''}`}
+        aria-label="Primary navigation"
+      >
+        <SidebarContent collapsed={desktopCollapsed} />
       </aside>
       <div className={`sidebar-drawer ${mobileOpen ? 'sidebar-drawer--open' : ''}`} aria-hidden={!mobileOpen}>
         <button className="sidebar-drawer__backdrop" type="button" aria-label="Close navigation" onClick={onClose} />
@@ -45,12 +49,20 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   );
 }
 
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarContent({
+  collapsed = false,
+  onNavigate,
+}: {
+  collapsed?: boolean;
+  onNavigate?: () => void;
+}) {
   return (
     <div className="sidebar__content">
       <div className="sidebar__brand">
-        <span className="sidebar__eyebrow">Personal intelligence OS</span>
-        <strong>AI Life Architect</strong>
+        <span className={`sidebar__eyebrow ${collapsed ? 'sidebar__eyebrow--hidden' : ''}`}>
+          Personal intelligence OS
+        </span>
+        <strong className={collapsed ? 'sidebar__brand-title--hidden' : ''}>AI Life Architect</strong>
       </div>
       <nav className="sidebar__nav">
         {navigationItems.map((item) => {
@@ -61,9 +73,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               to={item.to}
               className={({ isActive }) => `sidebar__link ${isActive ? 'sidebar__link--active' : ''}`}
               onClick={onNavigate}
+              title={collapsed ? item.label : undefined}
             >
               <Icon size={18} />
-              <span>
+              <span className={collapsed ? 'sidebar__link-content--hidden' : ''}>
                 <strong>{item.label}</strong>
                 <small>{item.description}</small>
               </span>

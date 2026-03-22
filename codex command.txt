@@ -1,0 +1,71 @@
+Read AGENTS.md and SPECS/08.1-foundation.md.
+Implement Section 8.1 completely in production quality.
+
+Rules:
+- Follow AGENTS.md architecture, UI, responsiveness, and theming rules.
+- Follow UI/UX Standards from AGENTS.md strictly, including tooltips, form design, validation, responsiveness, and theming.
+- Do not create dummy or placeholder implementations.
+- Ensure backend, frontend, Docker, env, health checks, and docs are complete.
+- Run lint, typecheck, tests, and build.
+- Fix all issues.
+- Commit: "feat: implement section 8.1 foundation"
+- Push changes.
+
+
+use postgre password 'root', use front end port '5176' and backend port '8004', OLLAMA_MODEL=phi3:mini, user database name 'ai_life_architect'
+provide detailed steps to execute in local without using docker in readme.md file.
+git url - https://github.com/umeshayk/ai-life-architect.git
+
+-----
+
+Read AGENTS.md and SPECS/08.2-auth-rbac.md.
+Implement Section 8.2 completely.
+
+Rules:
+- Secure auth (no shortcuts)
+- Proper RBAC enforcement
+- Admin user management
+- Audit logging
+- Run migrations if needed
+- Validate everything
+- Commit: "feat: implement section 8.2 auth and rbac"
+- Push
+
+-----
+
+Read AGENTS.md, SPECS/domain-model.md, and SPECS/08.3-core-domain.md.
+
+Use domain-model.md as the SINGLE SOURCE OF TRUTH for:
+- database schema
+- relationships
+- API fields
+- frontend forms
+
+Implement Section 8.3 completely.
+
+Rules:
+- Do NOT invent random fields outside domain-model unless required.
+- Ensure relationships strictly follow domain-model.
+- Add filtering, sorting, pagination.
+- Ensure UI forms match domain-model fields.
+- Run migrations, lint, tests, build.
+- Fix issues.
+- Commit: "feat: implement section 8.3 core domain"
+- Push
+
+------- GENERIC AFTER 08.3 -----
+
+Read AGENTS.md, SPECS/domain-model.md, and SPECS/08.X-*.md.
+Use domain-model.md as authoritative reference for schema and relationships.
+
+Implement the section in production quality.
+
+Rules:
+- Follow architecture + UI + security + responsive + theming rules
+- Reuse existing patterns
+- Do not create inconsistent fields
+- Run migrations if needed
+- Run lint, typecheck, tests, build
+- Fix issues
+- Update docs
+- Commit and push

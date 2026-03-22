@@ -267,6 +267,190 @@ Reject implementation if:
 This section defines the canonical layout system for the entire application.
 All frontend implementations MUST follow this system.
 
+# UI/UX Standards (Mandatory)
+
+All frontend implementations must strictly follow these standards. No exceptions.
+
+---
+
+## 1. Field Labeling and Tooltips
+
+### Rules
+- Every input field MUST have:
+  - Label
+  - Placeholder (where applicable)
+  - Tooltip (for non-obvious fields)
+
+### Tooltip Guidelines
+- Use tooltip for:
+  - technical fields (e.g., priority, status)
+  - derived/calculated fields
+  - AI-related fields
+  - configuration fields
+- Do NOT use tooltip for obvious fields (e.g., Name, Title)
+
+### Tooltip Behavior
+- Tooltip must:
+  - appear on hover (desktop)
+  - appear on tap (mobile)
+  - be concise (max 1–2 lines)
+  - explain purpose, not repeat label
+
+### Example
+Field: Priority  
+Tooltip: "Defines importance. High priority items are highlighted and surfaced in recommendations."
+
+---
+
+## 2. Form Standards
+
+### Required
+- Labels always visible (no placeholder-only forms)
+- Required fields marked with `*`
+- Inline validation messages
+- Group related fields into sections
+- Use consistent spacing
+
+### Form Layout
+- Desktop → 2-column layout (where possible)
+- Mobile → single column
+- Logical grouping:
+  - Basic Info
+  - Scheduling
+  - Relationships
+  - Metadata
+
+---
+
+## 3. Input Types Standardization
+
+Use correct input types:
+
+- Text → short text
+- Textarea → description/content
+- Select → enums (status, priority)
+- Multi-select → tags
+- Date picker → dates
+- Date-time picker → events
+- Toggle → boolean
+- Number input → numeric values
+
+---
+
+## 4. Status and Priority UX
+
+- Status must use:
+  - badges with colors
+- Priority must use:
+  - color indicators (low=gray, medium=blue, high=orange, critical=red)
+
+---
+
+## 5. Tables and Lists
+
+### Must include:
+- Search bar (if list > 10 items)
+- Filters
+- Sorting
+- Pagination
+
+### Row actions:
+- View
+- Edit
+- Delete / Archive
+
+---
+
+## 6. Empty States
+
+Every screen must handle:
+- No data
+- No results (filtered)
+- Error state
+
+Example:
+"No tasks found. Create your first task to get started."
+
+---
+
+## 7. Loading States
+
+- Use skeleton loaders (not just spinners)
+- Avoid layout shift
+
+---
+
+## 8. Notifications and Feedback
+
+- Success → toast
+- Error → toast + inline message if needed
+- Confirm destructive actions (delete, archive)
+
+---
+
+## 9. Responsive Design Rules
+
+UI must support:
+- Mobile (stacked layout)
+- Tablet
+- Desktop
+- Wide screens
+
+### Rules:
+- No horizontal scroll
+- Use flexible grid (not fixed px)
+- Buttons must be tappable (min height 40px)
+
+---
+
+## 10. Theming Rules
+
+- Use token-based styling only
+- No hardcoded colors
+- Must support:
+  - light theme
+  - dark theme
+  - additional theme
+
+---
+
+## 11. Accessibility
+
+- All inputs must be keyboard accessible
+- Labels linked to inputs
+- Proper aria attributes where needed
+- Sufficient color contrast
+
+---
+
+## 12. AI UX Standards
+
+- AI-generated content must be labeled
+- Show loading state during AI processing
+- Allow user edit before saving
+- Never auto-save AI output without confirmation
+
+---
+
+## 13. Consistency Rules
+
+- Reuse components (do not rebuild per page)
+- Keep naming consistent across:
+  - backend
+  - API
+  - frontend
+
+---
+
+## 14. Do Not Allow
+
+Codex must NOT:
+- Create forms without labels
+- Use placeholder as label
+- Hardcode styles
+- Skip validation
+- Create inconsistent layouts
+
 ---
 
 ### 🌐 Global App Layout Architecture

@@ -34,6 +34,19 @@ function renderWithProviders(ui: React.ReactElement) {
 describe('app shell foundation', () => {
   beforeEach(() => {
     useThemeStore.setState({ theme: 'light' });
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === '(max-width: 1023px)',
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
   });
 
   it('renders sidebar navigation and global header controls', () => {
@@ -50,6 +63,28 @@ describe('app shell foundation', () => {
     fireEvent.click(screen.getByRole('button', { name: /open navigation/i }));
 
     expect(screen.getByLabelText('Mobile navigation')).toBeInTheDocument();
+  });
+
+  it('collapses desktop sidebar when the header menu button is used on wide screens', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    renderWithProviders(<AppLayout />);
+
+    fireEvent.click(screen.getByRole('button', { name: /open navigation/i }));
+
+    expect(document.querySelector('.app-shell__body--collapsed')).toBeInTheDocument();
   });
 
   it('switches theme from settings controls', () => {
