@@ -71,3 +71,18 @@ Rules:
 - Fix issues
 - Update docs
 - Commit and push
+
+
+-------------
+
+Read AGENTS.md, SPECS/domain-model.md, SPECS/ui-ux-standards.md, SPECS/design-system.md, SPECS/component-library.md, and SPECS/08.1-foundation.md before making changes.
+If this phase includes dashboard work, also read SPECS/dashboard-patterns.md.
+
+Use:
+- domain-model.md as authoritative for schema and relationships
+- ui-ux-standards.md for UX behavior
+- design-system.md and design-tokens for styling/layout
+- component-library.md for reuse
+- the phase spec for implementation scope
+
+Implement in production quality, run migrations if needed, run lint/typecheck/tests/build, fix issues, update docs, commit, and push.

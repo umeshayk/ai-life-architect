@@ -107,6 +107,30 @@ The platform should support these major domains:
 
 ---
 
+## 3A. External Specification Files (Mandatory)
+
+Codex and all implementers MUST read and follow these files in addition to this AGENTS.md:
+
+- `SPECS/domain-model.md` → authoritative schema, entities, relationships, and form field direction
+- `SPECS/ui-ux-standards.md` → authoritative UI/UX interaction rules
+- `SPECS/design-system.md` → authoritative design system and token usage rules
+- `SPECS/component-library.md` → authoritative reusable component definitions
+- `SPECS/dashboard-patterns.md` → authoritative dashboard composition rules
+- `SPECS/design-tokens.json` → authoritative token source for implementation values
+
+### Precedence Rules
+
+If there is conflict:
+
+1. `SPECS/domain-model.md` overrides schema and entity assumptions
+2. `SPECS/design-tokens.json` overrides raw visual values
+3. `SPECS/design-system.md`, `SPECS/ui-ux-standards.md`, `SPECS/component-library.md`, and `SPECS/dashboard-patterns.md` override page-level UI decisions
+4. `AGENTS.md` governs architecture, workflow, quality bar, and Definition of Done
+
+No implementation may ignore these files once they exist.
+
+---
+
 ## 4. Non-Negotiable Rules
 
 1. This is **not** an MVP, prototype, or mock-only app.
@@ -131,6 +155,9 @@ The platform should support these major domains:
 20. Do not mark a phase complete if screenshots, responsive validation, or build checks are missing.
 21. Do not use inline styles for layout except where dynamic runtime behavior truly requires them.
 22. Do not skip commit/push after a completed phase.
+23. Do not rely on frontend-only permission hiding for security.
+24. Do not invent schema fields or relationships that contradict `SPECS/domain-model.md`.
+25. Do not introduce new visual tokens ad hoc; add them to the shared token system first.
 
 ---
 
@@ -267,218 +294,71 @@ Reject implementation if:
 This section defines the canonical layout system for the entire application.
 All frontend implementations MUST follow this system.
 
-## External Specifications (Mandatory)
+### Mandatory Specs
+Codex MUST follow:
+- `SPECS/design-system.md`
+- `SPECS/ui-ux-standards.md`
+- `SPECS/component-library.md`
+- `SPECS/dashboard-patterns.md`
+- `SPECS/design-tokens.json`
 
-In addition to this document, Codex MUST read and follow:
+Rules:
+- Always reuse components from `component-library.md`
+- Always follow `dashboard-patterns.md` for dashboards
+- Always use shared design tokens
+- No hardcoded visual styling in feature pages
 
-- SPECS/domain-model.md → authoritative data model
-- SPECS/ui-ux-standards.md → UI/UX rules and design system
+### Token Source of Truth
+All visual values must come from shared tokens.
 
-These files are REQUIRED for implementation.
-If there is any conflict:
-- domain-model.md overrides schema decisions
-- ui-ux-standards.md overrides UI decisions
+Authoritative source:
+- `SPECS/design-tokens.json`
 
-# UI/UX Standards (Mandatory)
-
-All frontend implementations must strictly follow these standards. No exceptions.
-
----
-
-## 1. Field Labeling and Tooltips
-
-### Rules
-- Every input field MUST have:
-  - Label
-  - Placeholder (where applicable)
-  - Tooltip (for non-obvious fields)
-
-### Tooltip Guidelines
-- Use tooltip for:
-  - technical fields (e.g., priority, status)
-  - derived/calculated fields
-  - AI-related fields
-  - configuration fields
-- Do NOT use tooltip for obvious fields (e.g., Name, Title)
-
-### Tooltip Behavior
-- Tooltip must:
-  - appear on hover (desktop)
-  - appear on tap (mobile)
-  - be concise (max 1–2 lines)
-  - explain purpose, not repeat label
-
-### Example
-Field: Priority  
-Tooltip: "Defines importance. High priority items are highlighted and surfaced in recommendations."
-
----
-
-## 2. Form Standards
-
-### Required
-- Labels always visible (no placeholder-only forms)
-- Required fields marked with `*`
-- Inline validation messages
-- Group related fields into sections
-- Use consistent spacing
-
-### Form Layout
-- Desktop → 2-column layout (where possible)
-- Mobile → single column
-- Logical grouping:
-  - Basic Info
-  - Scheduling
-  - Relationships
-  - Metadata
-
----
-
-## 3. Input Types Standardization
-
-Use correct input types:
-
-- Text → short text
-- Textarea → description/content
-- Select → enums (status, priority)
-- Multi-select → tags
-- Date picker → dates
-- Date-time picker → events
-- Toggle → boolean
-- Number input → numeric values
-
----
-
-## 4. Status and Priority UX
-
-- Status must use:
-  - badges with colors
-- Priority must use:
-  - color indicators (low=gray, medium=blue, high=orange, critical=red)
-
----
-
-## 5. Tables and Lists
-
-### Must include:
-- Search bar (if list > 10 items)
-- Filters
-- Sorting
-- Pagination
-
-### Row actions:
-- View
-- Edit
-- Delete / Archive
-
----
-
-## 6. Empty States
-
-Every screen must handle:
-- No data
-- No results (filtered)
-- Error state
-
-Example:
-"No tasks found. Create your first task to get started."
-
----
-
-## 7. Loading States
-
-- Use skeleton loaders (not just spinners)
-- Avoid layout shift
-
----
-
-## 8. Notifications and Feedback
-
-- Success → toast
-- Error → toast + inline message if needed
-- Confirm destructive actions (delete, archive)
-
----
-
-## 9. Responsive Design Rules
-
-UI must support:
-- Mobile (stacked layout)
-- Tablet
-- Desktop
-- Wide screens
-
-### Rules:
-- No horizontal scroll
-- Use flexible grid (not fixed px)
-- Buttons must be tappable (min height 40px)
-
----
-
-## 10. Theming Rules
-
-- Use token-based styling only
+Rules:
 - No hardcoded colors
-- Must support:
-  - light theme
-  - dark theme
-  - additional theme
+- No random spacing values
+- No arbitrary font sizes
+- No per-page visual styling overrides without shared token support
 
----
+If AGENTS.md examples conflict with the token file:
+→ the token file wins
 
-## 11. Accessibility
+### Typography System
+Typography must be controlled through the shared design system.
 
-- All inputs must be keyboard accessible
-- Labels linked to inputs
-- Proper aria attributes where needed
-- Sufficient color contrast
+Authoritative sources:
+- `SPECS/design-system.md`
+- `SPECS/design-tokens.json`
 
----
+Rules:
+- single primary UI font family
+- consistent heading/body scale
+- no page-specific typography inventions
+- readable hierarchy across devices
 
-## 12. AI UX Standards
+### Canonical Breakpoints
+Use this breakpoint set everywhere:
 
-- AI-generated content must be labeled
-- Show loading state during AI processing
-- Allow user edit before saving
-- Never auto-save AI output without confirmation
+- mobile: 320px–639px
+- tablet: 640px–1023px
+- desktop: 1024px–1439px
+- wide desktop: 1440px–1919px
+- ultrawide: 1920px+
 
----
+### Global App Layout Architecture
 
-## 13. Consistency Rules
-
-- Reuse components (do not rebuild per page)
-- Keep naming consistent across:
-  - backend
-  - API
-  - frontend
-
----
-
-## 14. Do Not Allow
-
-Codex must NOT:
-- Create forms without labels
-- Use placeholder as label
-- Hardcode styles
-- Skip validation
-- Create inconsistent layouts
-
----
-
-### 🌐 Global App Layout Architecture
-
-Every page must be rendered inside a shared AppLayout.
+Every authenticated page must be rendered inside a shared `AppLayout`.
 
 Structure:
 
-AppLayout
- ├── TopHeader (sticky)
- ├── Sidebar (responsive navigation)
- ├── MainContent
- │     ├── PageHeader
- │     ├── PageBody
- │     └── FooterActions (optional)
- └── RightPanel (optional contextual panel)
+AppLayout  
+├── TopHeader (sticky)  
+├── Sidebar (responsive navigation)  
+├── MainContent  
+│   ├── PageHeader  
+│   ├── PageBody  
+│   └── FooterActions (optional)  
+└── RightPanel (optional contextual panel)
 
 Rules:
 - Do not create independent layouts per page
@@ -486,127 +366,33 @@ Rules:
 - Layout must be compositional and reusable
 - No hardcoded layout wrappers inside feature pages
 
----
+### Layout Composition Rules
+- Use CSS Grid for macro layout
+- Use Flexbox for internal alignment
+- Prefer `minmax()`, `clamp()`, and fluid/container-aware layouts
+- Avoid fixed pixel widths for core layout
+- Avoid absolute positioning for primary structure
 
-### 🧱 Layout Composition Rules
+### Page Layout Templates
+All pages should follow one of the approved layout families:
 
-- Layout must be built using:
-  - CSS Grid (for macro layout)
-  - Flexbox (for internal alignment)
-- Avoid:
-  - fixed pixel widths
-  - absolute positioning for core layout
-- Use container-based responsive layouts:
-  - minmax()
-  - clamp()
-  - fluid widths
+- dashboard layout: KPI row + insights grid + activity panel
+- list layout: filters toolbar + table/list + optional detail panel
+- detail layout: header + metadata + tabbed content + side info panel
+- builder layout: navigation + work area + validation/insights
+- form layout: title/actions + sectioned form + sticky action bar
+- settings/admin layout: section nav + configuration panel
 
----
+Do not invent new layout families unless AGENTS.md is updated.
 
-### 📱 Responsive Layout Behavior
+### UI Composition Rules
+- Prefer flat grouped sections over excessive card nesting
+- Use cards for logical grouping, not decoration
+- Maintain consistent spacing from the shared token scale
+- Align content to a shared content grid
+- Large desktop layouts must not look sparse
 
-Breakpoints:
-
-- Mobile: < 768px
-- Tablet: 768px – 1024px
-- Desktop: > 1024px
-- Wide Desktop: > 1440px
-
-Behavior:
-
-Sidebar:
-- Desktop → visible
-- Tablet → collapsible
-- Mobile → hidden (drawer via hamburger)
-
-Header:
-- always sticky
-- must not overlap content
-
-Main Content:
-- full width on mobile
-- constrained max-width on large screens
-
-Right Panel:
-- visible only on desktop
-- collapses into drawer on tablet/mobile
-
----
-
-### 📄 Page Layout Templates (Reusable Patterns)
-
-All pages must follow one of the approved templates:
-
-#### Dashboard Layout
-- KPI Row
-- Insights Grid
-- Activity / Recommendations Panel
-
-#### List Layout
-- Filter Toolbar
-- Data Table / List
-- Optional Right Detail Panel
-
-#### Detail Layout
-- Page Header
-- Metadata Section
-- Tabbed Content
-- Side Info Panel
-
-#### Builder Layout
-- Left → Rule Tree / Navigation
-- Center → Main Work Area
-- Right → Validation / Insights Panel
-
-#### Form Layout
-- Top → Title + Actions
-- Middle → Sectioned Form
-- Bottom → Sticky Action Bar
-
-Rules:
-- Do not invent new layout types without updating AGENTS.md
-- Prefer reuse over creativity
-
----
-
-### 🎨 UI Composition Rules
-
-- Prefer flat layout over excessive card nesting
-- Use cards only for logical grouping, not decoration
-- Maintain consistent spacing using token scale (8px system)
-- Align all content to shared grid system
-
----
-
-### 🌙 Theme System Enforcement
-
-Themes must be applied through tokens only.
-
-Do NOT:
-- hardcode colors
-- override styles per page
-
----
-
-### 🔄 Layout Modes
-
-- Learning Mode
-- Professional Mode
-- Builder Mode
-
----
-
-### 🤖 Codex Layout Enforcement Rules
-
-- Always use AppLayout
-- Reuse approved templates
-- Validate responsiveness across devices
-- Validate themes
-
-
-The frontend must behave like a modern enterprise SaaS product on every major device size.
-
-### Required device support
+### Required Device Support
 Support these viewport categories from the start:
 - mobile small (320px+)
 - mobile standard (375px+)
@@ -640,38 +426,16 @@ Support these viewport categories from the start:
 - Required theme modes:
   - light
   - dark
-  - at least 2 additional branded/premium themes
-- Themes must control:
-  - background layers
-  - text hierarchy
-  - borders
-  - brand/accent colors
-  - states (success/warning/error/info)
-  - charts/data visualization palette tokens
-  - focus rings
-  - overlays/backdrops
-- Theme switching must not require per-page rewrites
+  - at least one additional premium theme
 - Components must inherit tokens rather than define raw colors locally
-- Support future user or workspace theme preferences
-- Preserve contrast and readability across all themes
+- Theme switching must not require per-page rewrites
+- Preserve readability and contrast across all supported themes
 
-### Modern styling requirements
-- Use a mature visual language: clean spacing, layered surfaces, subtle borders, modern typography, restrained shadows
-- Use contemporary interaction patterns:
-  - sticky contextual actions where useful
-  - drawer-first editing where appropriate
-  - command-first navigation
-  - segmented controls
-  - compact filters
-  - skeleton loading states
-- Avoid outdated UI patterns:
-  - overly large padding everywhere
-  - generic Bootstrap-like visual feel
-  - mismatched control heights
-  - bright unstructured colors
-  - cramped mobile tap targets
-- Motion should be subtle and purposeful
-- Every page must look intentional in both dense and comfortable content states
+### Modern Styling Rules
+- Use a mature visual language: clean spacing, layered surfaces, subtle borders, restrained shadows, modern typography
+- Prefer contemporary interaction patterns: compact filters, drawer-first edits where appropriate, skeleton loading, command-first access where suitable
+- Avoid outdated UI patterns: giant padding everywhere, generic bootstrap-like feel, mismatched control heights, loud unstructured colors
+- Motion must be subtle and purposeful
 
 ### Design token expectations
 At minimum define shared tokens for:
@@ -692,9 +456,47 @@ At minimum define shared tokens for:
 ### Accessibility and polish
 - Keyboard accessibility is required for primary interactions
 - Visible focus states are mandatory in every theme
-- Contrast should remain readable in all themes and states
-- Use aria support and semantic HTML for navigation, dialogs, forms, and command interactions
-- Respect prefers-reduced-motion and dark-mode system defaults when appropriate
+- Contrast must remain readable in all themes
+- Use semantic HTML and aria support for dialogs, navigation, forms, and interactive controls
+- Respect reduced-motion preferences
+
+### Header Standards
+The top header must remain consistent across pages.
+
+Left section:
+- app logo or product name
+- current workspace/context selector where relevant
+
+Center section:
+- global search bar
+- command palette entry point
+
+Right section:
+- command palette trigger
+- quick create
+- notifications
+- AI assistant entry
+- theme toggle
+- user profile menu
+
+Header rules:
+- sticky
+- consistent height
+- no page-specific structure changes
+- responsive on all supported breakpoints
+- icon-only buttons must have tooltips and accessible labels
+
+### Frontend Review Checklist
+For every frontend phase, verify and document:
+- mobile layout works
+- tablet layout works
+- desktop layout works
+- wide desktop layout works
+- light theme works
+- dark theme works
+- no broken overflow or clipped content
+- no inconsistent spacing or alignment
+- no page-specific hardcoded layout hacks
 
 ---
 
