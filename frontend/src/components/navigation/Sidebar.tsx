@@ -1,6 +1,7 @@
 import { LayoutDashboard, Settings, ShieldCheck } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
+import { Tooltip } from 'components/feedback/Tooltip';
 import type { NavigationItem } from 'types/navigation';
 
 const navigationItems: NavigationItem[] = [
@@ -68,19 +69,19 @@ function SidebarContent({
         {navigationItems.map((item) => {
           const Icon = item.icon;
           return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => `sidebar__link ${isActive ? 'sidebar__link--active' : ''}`}
-              onClick={onNavigate}
-              title={collapsed ? item.label : undefined}
-            >
-              <Icon size={18} />
-              <span className={collapsed ? 'sidebar__link-content--hidden' : ''}>
-                <strong>{item.label}</strong>
-                <small>{item.description}</small>
-              </span>
-            </NavLink>
+            <Tooltip key={item.to} content={item.label} side="right" disabled={!collapsed}>
+              <NavLink
+                to={item.to}
+                className={({ isActive }) => `sidebar__link ${isActive ? 'sidebar__link--active' : ''}`}
+                onClick={onNavigate}
+              >
+                <Icon size={18} />
+                <span className={collapsed ? 'sidebar__link-content--hidden' : ''}>
+                  <strong>{item.label}</strong>
+                  <small>{item.description}</small>
+                </span>
+              </NavLink>
+            </Tooltip>
           );
         })}
       </nav>

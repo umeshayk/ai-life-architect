@@ -94,4 +94,12 @@ describe('app shell foundation', () => {
 
     expect(useThemeStore.getState().theme).toBe('dark');
   });
+
+  it('shows a tooltip for header icon actions', () => {
+    renderWithProviders(<AppLayout />);
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /notifications/i }));
+
+    expect(screen.getByRole('tooltip', { name: /view notifications/i })).toBeInTheDocument();
+  });
 });
