@@ -1,4 +1,5 @@
 import { ActivityCard } from 'components/layout/ActivityCard';
+import { ContentCard } from 'components/layout/ContentCard';
 import { KpiCard } from 'components/layout/KpiCard';
 import { PageContainer } from 'components/layout/PageContainer';
 import { RecommendationCard } from 'components/layout/RecommendationCard';
@@ -48,21 +49,21 @@ export function DashboardPage() {
         ))}
       </section>
       <section className="content-grid">
-        <section className="panel recommendation-card recommendation-card--hero">
-          <div className="panel__header">
-            <div>
-              <h2>Today's focus</h2>
-              <p className="panel__helper-text">Start by adding work that should surface in the daily dashboard.</p>
-            </div>
+        <ContentCard
+          title="Today's focus"
+          helperText="Start by adding work that should surface in the daily dashboard."
+          className="recommendation-card recommendation-card--hero"
+          actions={
             <Tooltip content="No overdue tasks, missed routines, or urgent alerts are currently surfaced.">
               <span className="badge badge--neutral">No urgent items</span>
             </Tooltip>
-          </div>
+          }
+        >
           <div className="empty-panel-state">
             <h3>No tasks or routines due yet</h3>
             <p>Add your first task, routine, or event to populate today's focus and planning surfaces.</p>
           </div>
-        </section>
+        </ContentCard>
         <section className="content-stack">
           <RecommendationCard
             title="Recommendations"

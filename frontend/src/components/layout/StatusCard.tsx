@@ -1,3 +1,4 @@
+import { ContentCard } from 'components/layout/ContentCard';
 import { useQuery } from '@tanstack/react-query';
 
 import { Skeleton } from 'components/feedback/Skeleton';
@@ -18,45 +19,41 @@ export function StatusCard() {
 
   if (isLoading) {
     return (
-      <section className="panel">
-        <div className="panel__header">
-          <div>
-            <h2>Platform health</h2>
-            <p className="panel__helper-text">Operational status for the API, database, and background worker dependencies.</p>
-          </div>
-        </div>
+      <ContentCard
+        title="Platform health"
+        helperText="Operational status for the API, database, and background worker dependencies."
+        className="status-card"
+      >
         <Skeleton height="lg" />
-      </section>
+      </ContentCard>
     );
   }
 
   if (isError || !data) {
     return (
-      <section className="panel">
-        <div className="panel__header">
-          <div>
-            <h2>Platform health</h2>
-            <p className="panel__helper-text">Operational status for the API, database, and background worker dependencies.</p>
-          </div>
-        </div>
+      <ContentCard
+        title="Platform health"
+        helperText="Operational status for the API, database, and background worker dependencies."
+        className="status-card"
+      >
         <p className="status-text status-text--warning">
           Health data is temporarily unavailable. Core navigation remains available.
         </p>
-      </section>
+      </ContentCard>
     );
   }
 
   return (
-    <section className="panel status-card">
-      <div className="panel__header">
-        <div>
-          <h2>Platform health</h2>
-          <p className="panel__helper-text">Operational status for the API, database, and background worker dependencies.</p>
-        </div>
+    <ContentCard
+      title="Platform health"
+      helperText="Operational status for the API, database, and background worker dependencies."
+      className="status-card"
+      actions={
         <Tooltip content="Summarizes whether required services are ready to support core product workflows.">
           <span className={`badge badge--${statusToneMap[data.data.status]}`}>{data.data.status}</span>
         </Tooltip>
-      </div>
+      }
+    >
       <dl className="health-grid">
         <div>
           <dt>Service</dt>
@@ -87,6 +84,6 @@ export function StatusCard() {
           </li>
         ))}
       </ul>
-    </section>
+    </ContentCard>
   );
 }
