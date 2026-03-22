@@ -68,8 +68,6 @@ export function DashboardPage() {
           <RecommendationCard
             title="Recommendations"
             helperText="Rule-based and AI-guided recommendations will appear here once work is created."
-            badge="Up to date"
-            badgeTooltip="There are no current recommendations requiring review or action."
             emptyTitle="Nothing to review right now"
             emptyDescription="Recommendations will explain why an item needs attention and what action to take next."
           />
